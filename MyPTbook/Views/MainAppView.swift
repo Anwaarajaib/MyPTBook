@@ -1,5 +1,6 @@
 import SwiftUI
 
+// MARK: - Main Application View
 struct MainAppView: View {
     @StateObject private var dataManager = DataManager.shared
     @State private var clients: [Client] = []
@@ -77,7 +78,7 @@ struct MainAppView: View {
                                 Image(systemName: "person.crop.circle.fill")
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
-                                    .frame(width: 80, height: 64)
+                                    .frame(width: 80, height: 80)
                                     .foregroundColor(.gray.opacity(0.5))
                                     .clipShape(Circle())
                                     .overlay(
@@ -133,8 +134,8 @@ struct MainAppView: View {
             }
             .sheet(isPresented: $showingTrainerProfile) {
                 TrainerProfileView(
-                    name: .constant(trainerName),
-                    profileImage: .constant(trainerImage)
+                    name: $trainerName,
+                    profileImage: $trainerImage
                 )
             }
         }

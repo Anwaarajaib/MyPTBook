@@ -13,7 +13,7 @@ struct Client: Identifiable, Codable {
     var notes: String
     var goals: String
     var goalsNotes: String
-    var sessions: [WorkoutSession]
+    var sessions: [Session]
     var profileImage: UIImage?
     
     init(id: UUID = UUID(), 
@@ -27,7 +27,7 @@ struct Client: Identifiable, Codable {
          notes: String = "",
          goals: String = "",
          goalsNotes: String = "",
-         sessions: [WorkoutSession] = [],
+         sessions: [Session] = [],
          profileImage: UIImage? = nil) {
         self.id = id
         self.name = name
@@ -66,7 +66,7 @@ struct Client: Identifiable, Codable {
     }
 }
 
-struct WorkoutSession: Codable, Identifiable {
+struct Session: Codable, Identifiable {
     let id: UUID
     var date: Date
     var duration: TimeInterval
@@ -102,19 +102,28 @@ struct Exercise: Codable, Identifiable {
     var reps: String
     var weight: String
     var notes: String?
+    var isPartOfCircuit: Bool
+    var circuitRounds: Int?
+    var circuitName: String?
     
     init(id: UUID = UUID(),
          name: String = "",
          sets: Int = 0,
          reps: String = "",
          weight: String = "",
-         notes: String? = nil) {
+         notes: String? = nil,
+         isPartOfCircuit: Bool = false,
+         circuitRounds: Int? = nil,
+         circuitName: String? = nil) {
         self.id = id
         self.name = name
         self.sets = sets
         self.reps = reps
         self.weight = weight
         self.notes = notes
+        self.isPartOfCircuit = isPartOfCircuit
+        self.circuitRounds = circuitRounds
+        self.circuitName = circuitName
     }
 }
 
@@ -126,7 +135,7 @@ extension Client {
 }
 
 // MARK: - Helper Methods
-extension WorkoutSession {
+extension Session {
     var formattedDuration: String {
         let hours = Int(duration) / 3600
         let minutes = Int(duration) / 60 % 60

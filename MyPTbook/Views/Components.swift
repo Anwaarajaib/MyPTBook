@@ -1,5 +1,6 @@
 import SwiftUI
 
+// MARK: - Trainer Profile Header
 struct TrainerProfileHeader: View {
     @Binding var showingProfile: Bool
     
@@ -31,6 +32,7 @@ struct TrainerProfileHeader: View {
     }
 }
 
+// MARK: - Client Card
 struct ClientCard: View {
     let client: Client
     @ObservedObject var dataManager: DataManager
@@ -42,7 +44,7 @@ struct ClientCard: View {
                     Image(uiImage: profileImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 64, height: 64)
+                        .frame(width: 80, height: 80)
                         .clipShape(Circle())
                         .overlay(
                             Circle()
@@ -52,7 +54,7 @@ struct ClientCard: View {
                     Image(systemName: "person.crop.circle.fill")
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 64, height: 64)
+                        .frame(width: 80, height: 80)
                         .foregroundColor(.gray.opacity(0.5))
                         .clipShape(Circle())
                         .overlay(
@@ -75,12 +77,12 @@ struct ClientCard: View {
     }
 }
 
+// MARK: - Session List Card
 struct SessionListCard: View {
     let title: String
-    let sessions: [WorkoutSession]
+    let sessions: [Session]
     let showAddButton: Bool
     let onAddTapped: () -> Void
-    let onDelete: (WorkoutSession) -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -104,30 +106,13 @@ struct SessionListCard: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(sessions) { session in
-                        ZStack {
-                            HStack {
-                                Button(action: {
-                                    withAnimation {
-                                        onDelete(session)
-                                    }
-                                }) {
-                                    Image(systemName: "trash")
-                                        .foregroundColor(.white)
-                                        .frame(width: 50)
-                                        .frame(maxHeight: .infinity)
-                                        .background(Color.red)
-                                }
-                                Spacer()
-                            }
-                            
-                            NavigationLink {
-                                SessionDetailView(session: session)
-                            } label: {
-                                SessionRowView(session: session)
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                            .background(Color.white)
+                        NavigationLink {
+                            SessionDetailView(session: session)
+                        } label: {
+                            SessionRowView(session: session)
                         }
+                        .buttonStyle(PlainButtonStyle())
+                        .background(Color.white)
                         
                         if session.id != sessions.last?.id {
                             Divider()
@@ -144,8 +129,9 @@ struct SessionListCard: View {
     }
 }
 
+// MARK: - Session Row View
 struct SessionRowView: View {
-    let session: WorkoutSession
+    let session: Session
     
     var body: some View {
         HStack {

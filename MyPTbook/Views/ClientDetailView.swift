@@ -340,14 +340,12 @@ struct SessionsListView: View {
     let client: Client
     @Binding var showingAddSession: Bool
     @ObservedObject var dataManager = DataManager.shared
-    @State private var showingAlert = false
-    @State private var sessionToDelete: WorkoutSession?
     
-    var activeSessions: [WorkoutSession] {
+    var activeSessions: [Session] {
         client.sessions.filter { !$0.isCompleted }.sorted { $0.sessionNumber < $1.sessionNumber }
     }
     
-    var completedSessions: [WorkoutSession] {
+    var completedSessions: [Session] {
         client.sessions.filter { $0.isCompleted }.sorted { $0.sessionNumber < $1.sessionNumber }
     }
     
@@ -357,11 +355,7 @@ struct SessionsListView: View {
                 title: "ACTIVE SESSIONS",
                 sessions: activeSessions,
                 showAddButton: true,
-                onAddTapped: { showingAddSession = true },
-                onDelete: { session in
-                    sessionToDelete = session
-                    showingAlert = true
-                }
+                onAddTapped: { showingAddSession = true }
             )
             
             if !completedSessions.isEmpty {
@@ -369,34 +363,8 @@ struct SessionsListView: View {
                     title: "COMPLETED SESSIONS",
                     sessions: completedSessions,
                     showAddButton: false,
-                    onAddTapped: {},
-                    onDelete: { session in
-                        sessionToDelete = session
-                        showingAlert = true
-                    }
+                    onAddTapped: {}
                 )
-            }
-        }
-        .alert("Delete Session", isPresented: $showingAlert, presenting: sessionToDelete) { session in
-            Button("Delete", role: .destructive) {
-                withAnimation {
-                    deleteSession(session)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: { session in
-            Text("Are you sure you want to delete Session \(session.sessionNumber)?")
-        }
-    }
-    
-    private func deleteSession(_ session: WorkoutSession) {
-        if var updatedClient = dataManager.clients.first(where: { $0.id == client.id }) {
-            updatedClient.sessions.removeAll { $0.id == session.id }
-            
-            if let clientIndex = dataManager.clients.firstIndex(where: { $0.id == client.id }) {
-                dataManager.clients[clientIndex] = updatedClient
-                dataManager.saveClients()
-                NotificationCenter.default.post(name: NSNotification.Name("RefreshClientData"), object: nil)
             }
         }
     }

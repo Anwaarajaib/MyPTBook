@@ -22,7 +22,7 @@ const exerciseSchema = new mongoose.Schema({
   notes: String
 });
 
-const workoutSessionSchema = new mongoose.Schema({
+const SessionSchema = new mongoose.Schema({
   id: {
     type: String,
     required: true
@@ -58,7 +58,7 @@ const clientSchema = new mongoose.Schema({
   weight: String,
   medicalHistory: String,
   goalsNotes: String,
-  sessions: [workoutSessionSchema],
+  sessions: [SessionSchema],
   createdAt: {
     type: Date,
     default: Date.now
