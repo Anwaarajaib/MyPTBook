@@ -14,25 +14,25 @@ const app = express();
 
 const allowedOrigins = [
 
-    "https://project-frontend.vercel.app",
-  
-    "https://myptbook.com"
-  ];
-  const corsOptions = {
-    origin: (origin, callback) => {
-      if (allowedOrigins.includes(origin) || !origin) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    optionsSuccessStatus: 200,
-    credentials: true,
-    preflightContinue: false
-  };
-  app.use(cors(corsOptions));
+  "https://my-pt-book-git-main-anwaarajaibs-projects.vercel.app",
+
+  "https://myptbook.com"
+];
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (allowedOrigins.includes(origin) || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 200,
+  credentials: true,
+  preflightContinue: false
+};
+app.use(cors(corsOptions));
 
 // Routes
 app.use('/api/auth', authRoutes);
