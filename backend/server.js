@@ -14,7 +14,7 @@ const app = express();
 
 const allowedOrigins = [
 
-  "https://my-pt-book-git-main-anwaarajaibs-projects.vercel.app",
+  "https://my-pt-book-ebon.vercel.app",
 
   "https://myptbook.com"
 ];
