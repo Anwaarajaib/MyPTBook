@@ -29,20 +29,23 @@
 		86C3C5DA2CF6325D00E527D4 /* MyPTbookUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MyPTbookUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		86ECC11E2D0CA32D004CD6BD /* Exceptions for "MyPTbook" folder in "MyPTbook" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 86C3C5BF2CF6325B00E527D4 /* MyPTbook */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		86C3C5C22CF6325B00E527D4 /* MyPTbook */ = {
+		86ECC0CC2D0C9F2F004CD6BD /* MyPTbook */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				86ECC11E2D0CA32D004CD6BD /* Exceptions for "MyPTbook" folder in "MyPTbook" target */,
+			);
 			path = MyPTbook;
-			sourceTree = "<group>";
-		};
-		86C3C5D32CF6325D00E527D4 /* MyPTbookTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = MyPTbookTests;
-			sourceTree = "<group>";
-		};
-		86C3C5DD2CF6325D00E527D4 /* MyPTbookUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = MyPTbookUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -75,9 +78,7 @@
 		86C3C5B72CF6325B00E527D4 = {
 			isa = PBXGroup;
 			children = (
-				86C3C5C22CF6325B00E527D4 /* MyPTbook */,
-				86C3C5D32CF6325D00E527D4 /* MyPTbookTests */,
-				86C3C5DD2CF6325D00E527D4 /* MyPTbookUITests */,
+				86ECC0CC2D0C9F2F004CD6BD /* MyPTbook */,
 				86C3C5C12CF6325B00E527D4 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -108,7 +109,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				86C3C5C22CF6325B00E527D4 /* MyPTbook */,
+				86ECC0CC2D0C9F2F004CD6BD /* MyPTbook */,
 			);
 			name = MyPTbook;
 			packageProductDependencies = (
@@ -130,9 +131,6 @@
 			dependencies = (
 				86C3C5D22CF6325D00E527D4 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-				86C3C5D32CF6325D00E527D4 /* MyPTbookTests */,
-			);
 			name = MyPTbookTests;
 			packageProductDependencies = (
 			);
@@ -152,9 +150,6 @@
 			);
 			dependencies = (
 				86C3C5DC2CF6325D00E527D4 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				86C3C5DD2CF6325D00E527D4 /* MyPTbookUITests */,
 			);
 			name = MyPTbookUITests;
 			packageProductDependencies = (
@@ -399,11 +394,16 @@
 				DEVELOPMENT_TEAM = 53HN94XF62;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MyPTbook/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MyPTbook;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
+				INFOPLIST_KEY_NSCameraUsageDescription = "We need camera access to take profile photos";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "We need photo library access to select profile photos";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -428,11 +428,16 @@
 				DEVELOPMENT_TEAM = 53HN94XF62;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MyPTbook/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MyPTbook;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
+				INFOPLIST_KEY_NSCameraUsageDescription = "We need camera access to take profile photos";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "We need photo library access to select profile photos";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

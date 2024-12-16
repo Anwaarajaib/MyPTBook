@@ -14,7 +14,7 @@ class APIClient {
     static let shared = APIClient()
     
     #if DEBUG
-    private let baseURL = "http://192.168.70.102:5001/api"  // Your actual IP address
+    private let baseURL = "https://my-pt-book-app-backend.vercel.app/api"
     #else
     private let baseURL = "https://your-production-server.com/api"  // Replace with your production URL when ready
     #endif

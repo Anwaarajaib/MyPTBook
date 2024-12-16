@@ -103,7 +103,10 @@ class DataManager: ObservableObject {
         for client in clients {
             do {
                 let encoder = JSONEncoder()
-                let data = try encoder.encode(client)
+                var clientToSave = client
+                // Ensure nutritionPlan is included in the encoded data
+                clientToSave.nutritionPlan = client.nutritionPlan
+                let data = try encoder.encode(clientToSave)
                 let file = clientsDirectory.appendingPathComponent("\(client.id.uuidString).json")
                 try data.write(to: file)
                 
@@ -234,6 +237,95 @@ class DataManager: ObservableObject {
             } catch {
                 print("Error saving client \(client.id): \(error)")
             }
+        }
+    }
+    
+    func clearAuthToken() {
+        removeAuthToken()
+    }
+    
+    // Add helper methods for client-specific operations
+    func saveClientSessions(clientId: UUID, sessions: [Session]) {
+        // Find the specific client
+        if let index = clients.firstIndex(where: { $0.id == clientId }) {
+            // Update only that client's sessions
+            clients[index].sessions = sessions
+            // Save all clients to persist the changes
+            saveClients(clients)
+            print("Saved \(sessions.count) sessions for client ID: \(clientId)")
+        }
+    }
+    
+    func getClientSessions(clientId: UUID) -> [Session] {
+        // Get sessions only for the specific client
+        if let client = clients.first(where: { $0.id == clientId }) {
+            print("Retrieved \(client.sessions.count) sessions for client ID: \(clientId)")
+            return client.sessions
+        }
+        return []
+    }
+    
+    func updateClientSession(clientId: UUID, session: Session) {
+        // Find the specific client
+        if let clientIndex = clients.firstIndex(where: { $0.id == clientId }) {
+            // Find and update only that specific session
+            if let sessionIndex = clients[clientIndex].sessions.firstIndex(where: { $0.id == session.id }) {
+                clients[clientIndex].sessions[sessionIndex] = session
+                // Save all clients to persist the changes
+                saveClients(clients)
+                print("Updated session \(session.id) for client ID: \(clientId)")
+            }
+        }
+    }
+    
+    func deleteClientSession(clientId: UUID, sessionId: UUID) {
+        // Find the specific client
+        if let clientIndex = clients.firstIndex(where: { $0.id == clientId }) {
+            // Remove only the specific session
+            clients[clientIndex].sessions.removeAll { session in
+                session.id == sessionId
+            }
+            
+            // Save changes
+            saveClients(clients)
+            
+            // Notify observers
+            objectWillChange.send()
+            
+            // Post notification for UI update
+            NotificationCenter.default.post(
+                name: NSNotification.Name("RefreshClientData"),
+                object: nil,
+                userInfo: ["clientId": clientId]
+            )
+            
+            print("Deleted session \(sessionId) for client ID: \(clientId)")
+        }
+    }
+    
+    // Add this method for deleting multiple sessions
+    func deleteClientSessions(clientId: UUID, sessionNumbers: [Int]) {
+        // Find the specific client
+        if let clientIndex = clients.firstIndex(where: { $0.id == clientId }) {
+            // Remove the specified sessions
+            clients[clientIndex].sessions.removeAll { session in
+                sessionNumbers.contains(session.sessionNumber)
+            }
+            
+            // Save changes
+            saveClients(clients)
+            
+            // Notify observers
+            objectWillChange.send()
+            
+            // Post notification for UI update
+            NotificationCenter.default.post(
+                name: NSNotification.Name("RefreshClientData"),
+                object: nil,
+                userInfo: ["clientId": clientId]
+            )
+            
+            print("Deleted sessions \(sessionNumbers) for client ID: \(clientId)")
         }
     }
 }

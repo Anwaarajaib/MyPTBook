@@ -93,13 +93,15 @@ struct MainAppView: View {
                     .padding(.bottom, 8)
                     
                     // Clients grid
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        // Display clients first
-                        ForEach(dataManager.clients) { client in
-                            ClientCard(client: client, dataManager: dataManager)
-                        }
-                        
-                        // Add Client button at the end
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.flexible(), spacing: 16),
+                            GridItem(.flexible(), spacing: 16),
+                            GridItem(.flexible(), spacing: 16)
+                        ],
+                        spacing: 16
+                    ) {
+                        // Add Client button
                         Button(action: { showingAddClient = true }) {
                             VStack(spacing: 12) {
                                 Image(systemName: "person.badge.plus")
@@ -109,15 +111,20 @@ struct MainAppView: View {
                                     .font(.headline)
                                     .foregroundColor(Colors.nasmBlue)
                             }
-                            .padding(.vertical, 40)
-                            .padding(.horizontal, 24)
-                            .frame(width: 150, height: 150)
+                            .padding(.vertical, 34)
+                            .padding(.horizontal, 20)
+                            .frame(width: 128, height: 128)
                             .background(Color.white)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                             .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
                         }
+                        
+                        // Existing clients
+                        ForEach(dataManager.clients) { client in
+                            ClientCard(client: client, dataManager: dataManager)
+                        }
                     }
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, 16)
                 }
                 .padding(.top, 4)
                 .padding(.bottom, 16)
@@ -140,5 +147,7 @@ struct MainAppView: View {
             }
         }
         .background(Colors.background)
+        .accentColor(Colors.nasmBlue)
+        .tint(Colors.nasmBlue)
     }
 } 

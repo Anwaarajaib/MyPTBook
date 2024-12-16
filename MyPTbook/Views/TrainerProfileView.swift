@@ -3,6 +3,7 @@ import PhotosUI
 
 struct TrainerProfileView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var authManager: AuthManager
     @Binding var name: String
     @Binding var profileImage: UIImage?
     
@@ -13,6 +14,8 @@ struct TrainerProfileView: View {
     @State private var showingActionSheet = false
     @State private var isEditing = false
     @State private var isAuthenticated: Bool = true
+    @State private var showAlert = false
+    @State private var alertMessage = ""
     
     init(name: Binding<String>, profileImage: Binding<UIImage?>) {
         self._name = name
@@ -24,171 +27,189 @@ struct TrainerProfileView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 24) {
-                    // Main content container
-                    VStack(spacing: 24) {
-                        // Profile Image Section
-                        Button(action: { 
-                            // Do nothing when clicking the image
-                        }) {
-                            if let profileImage = tempImage {
-                                Image(uiImage: profileImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 100, height: 100)
-                                    .clipShape(Circle())
-                                    .overlay(
-                                        Circle()
-                                            .stroke(Color.gray.opacity(0.5), lineWidth: 1)
-                                    )
-                            } else {
-                                Image(systemName: "person.crop.circle.fill")
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 100, height: 100)
-                                    .foregroundColor(.gray.opacity(0.5))
-                                    .clipShape(Circle())
-                                    .overlay(
-                                        Circle()
-                                            .stroke(Color.gray.opacity(0.5), lineWidth: 1)
-                                    )
-                            }
-                        }
-                        .overlay(
-                            Group {
-                                if isEditing {
-                                    Image(systemName: "camera")
-                                        .font(.system(size: 18))
-                                        .foregroundColor(Colors.nasmBlue)
-                                        .padding(7)
-                                        .background(Color.white)
-                                        .clipShape(Circle())
-                                        .shadow(color: .gray.opacity(0.3), radius: 4, x: 0, y: 2)
-                                        .offset(x: 35, y: 35)
-                                        .onTapGesture {
-                                            showingActionSheet = true
-                                        }
-                                }
-                            }
-                        )
-                        
-                        // Name Section
-                        VStack(alignment: .center, spacing: 8) {
-                            if isEditing {
-                                TextField("Enter your name", text: $tempName)
-                                    .textFieldStyle(PlainTextFieldStyle())
-                                    .font(.title2)
-                                    .multilineTextAlignment(.center)
-                                   } else {
-                                Text(tempName.isEmpty ? name : tempName) 
-                                    .font(.title2)
-                                    .foregroundColor(.black) // Ensure the color is consistent
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .padding(.vertical, 40)
-                    .padding(.horizontal, 24)
-                    .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-                    
-                    Button(action: {
-                        // Perform logout
-                        APIClient.shared.logout()
-                        isAuthenticated = false
-                        // Clear any temporary data
-                        tempName = ""
-                        tempImage = nil
-                        dismiss()
-                    }) {
-                        Text("Logout")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.red)
-                            .foregroundColor(.white)
-                            .cornerRadius(12)
-                            .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
-                    }
-                    .padding(.horizontal, 24)
-                }
-                .padding(20)
+                mainContent
             }
             .background(Colors.background)
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                
-                ToolbarItem(placement: .primaryAction) {
-                    Button(isEditing ? "Save" : "Edit") {
-                        if isEditing {
-                            name = tempName
-                            profileImage = tempImage
-                            DataManager.shared.saveTrainerName(tempName)
-                            DataManager.shared.saveTrainerImage(tempImage)
-                            dismiss()
-                        }
-                        withAnimation {
-                            isEditing.toggle()
-                        }
-                    }
-                }
-            }
+            .toolbar { toolbarContent }
             .confirmationDialog("Change Profile Picture", isPresented: $showingActionSheet) {
-                Button("Take Photo") {
-                    showingCamera = true
-                }
-                Button("Choose from Library") {
-                    showingImagePicker = true
-                }
-                Button("Cancel", role: .cancel) {}
+                dialogButtons
             }
+            .tint(Colors.nasmBlue)
             .sheet(isPresented: $showingImagePicker) {
-                ImagePicker(image: $tempImage, sourceType: .photoLibrary)
+                ImagePicker(
+                    image: $tempImage,
+                    sourceType: .photoLibrary,
+                    showAlert: $showAlert,
+                    alertMessage: $alertMessage
+                )
             }
             .fullScreenCover(isPresented: $showingCamera) {
-                ImagePicker(image: $tempImage, sourceType: .camera)
+                ImagePicker(
+                    image: $tempImage,
+                    sourceType: .camera,
+                    showAlert: $showAlert,
+                    alertMessage: $alertMessage
+                )
+            }
+            .alert("Camera Access", isPresented: $showAlert) {
+                Button("OK") {
+                    if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(settingsUrl)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(alertMessage)
             }
         }
     }
-}
-
-// Image Picker struct to handle camera and photo library
-struct ImagePicker: UIViewControllerRepresentable {
-    @Binding var image: UIImage?
-    let sourceType: UIImagePickerController.SourceType
     
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
-        picker.sourceType = sourceType
-        picker.delegate = context.coordinator
-        return picker
-    }
-    
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    
-    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let parent: ImagePicker
-        
-        init(_ parent: ImagePicker) {
-            self.parent = parent
+    private var mainContent: some View {
+        VStack(spacing: 24) {
+            profileCard
+            logoutButton
         }
-        
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            if let image = info[.originalImage] as? UIImage {
-                parent.image = image
+        .padding(20)
+    }
+    
+    private var profileCard: some View {
+        VStack(spacing: 24) {
+            profileImageSection
+            nameSection
+        }
+        .padding(.vertical, 40)
+        .padding(.horizontal, 24)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+    }
+    
+    private var profileImageSection: some View {
+        Button(action: { }) {
+            ZStack {
+                if let profileImage = tempImage {
+                    Image(uiImage: profileImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 100, height: 100)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color.gray.opacity(0.5), lineWidth: 1))
+                } else {
+                    Image(systemName: "person.crop.circle.fill")
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 100, height: 100)
+                        .foregroundColor(.gray.opacity(0.5))
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color.gray.opacity(0.5), lineWidth: 1))
+                }
+                
+                if isEditing {
+                    cameraButton
+                }
             }
-            picker.dismiss(animated: true)
         }
+    }
+    
+    private var cameraButton: some View {
+        Image(systemName: "camera")
+            .font(.system(size: 18))
+            .foregroundColor(Colors.nasmBlue)
+            .padding(7)
+            .background(Color.white)
+            .clipShape(Circle())
+            .shadow(color: .gray.opacity(0.3), radius: 4, x: 0, y: 2)
+            .offset(x: 35, y: 35)
+            .onTapGesture { showingActionSheet = true }
+    }
+    
+    private var nameSection: some View {
+        VStack(alignment: .center, spacing: 8) {
+            if isEditing {
+                TextField("Enter your name", text: $tempName)
+                    .textFieldStyle(PlainTextFieldStyle())
+                    .font(.title2)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text(tempName.isEmpty ? name : tempName)
+                    .font(.title2)
+                    .foregroundColor(.black)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+    
+    private var logoutButton: some View {
+        Button(action: performLogout) {
+            Text("Logout")
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.red)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+                .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+        }
+        .padding(.horizontal, 24)
+    }
+    
+    private var toolbarContent: some ToolbarContent {
+        Group {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { 
+                    dismiss() 
+                }
+                .foregroundColor(Colors.nasmBlue)
+            }
+            
+            ToolbarItem(placement: .primaryAction) {
+                Button(isEditing ? "Save" : "Edit") {
+                    handleEditSave()
+                }
+                .foregroundColor(Colors.nasmBlue)
+            }
+        }
+    }
+    
+    private var dialogButtons: some View {
+        Group {
+            Button {
+                showingCamera = true
+            } label: {
+                Text("Take Photo")
+                    .foregroundColor(Colors.nasmBlue)
+            }
+            
+            Button {
+                showingImagePicker = true
+            } label: {
+                Text("Choose from Library")
+                    .foregroundColor(Colors.nasmBlue)
+            }
+            
+            Button("Cancel", role: .cancel) { }
+        }
+    }
+    
+    private func handleEditSave() {
+        if isEditing {
+            name = tempName
+            profileImage = tempImage
+            DataManager.shared.saveTrainerName(tempName)
+            DataManager.shared.saveTrainerImage(tempImage)
+            dismiss()
+        }
+        withAnimation {
+            isEditing.toggle()
+        }
+    }
+    
+    private func performLogout() {
+        APIClient.shared.logout()
+        authManager.isAuthenticated = false
+        DataManager.shared.clearAuthToken()
+        dismiss()
     }
 } 

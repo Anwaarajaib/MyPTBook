@@ -1,126 +1,89 @@
 import SwiftUI
 
 struct LoginView: View {
+    @EnvironmentObject var authManager: AuthManager
     @State private var email = ""
     @State private var password = ""
-    @State private var isLoading = false
-    @State private var error: String?
-    @Binding var isLoggedIn: Bool
+    @State private var showingRegister = false
+    @State private var showingAlert = false
+    @State private var alertMessage = ""
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
+            VStack(spacing: 24) {
+                // Logo or App Name
                 Text("MyPTbook")
-                    .font(.largeTitle)
+                    .font(.largeTitle.bold())
                     .foregroundColor(Colors.nasmBlue)
                 
-                TextField("Email", text: $email)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .autocapitalization(.none)
-                    .keyboardType(.emailAddress)
-                    .textContentType(.emailAddress)
-                
-                SecureField("Password", text: $password)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                
-                if let error = error {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.red)
-                        Text(error)
-                            .foregroundColor(.red)
-                            .font(.caption)
+                // Login Form
+                VStack(spacing: 16) {
+                    TextField("Email", text: $email)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .textContentType(.emailAddress)
+                        .autocapitalization(.none)
+                    
+                    SecureField("Password", text: $password)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .textContentType(.password)
+                    
+                    Button(action: login) {
+                        Text("Login")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .background(Colors.nasmBlue)
+                            .cornerRadius(10)
                     }
-                    .transition(.opacity)
+                    .disabled(email.isEmpty || password.isEmpty)
                 }
+                .padding(.horizontal, 32)
                 
-                Button(action: login) {
-                    HStack {
-                        if isLoading {
-                            ProgressView()
-                        } else {
-                            Text("Login")
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Colors.nasmBlue)
-                .disabled(isLoading || !isLoginValid)
-                
-                NavigationLink(destination: RegisterView(isLoggedIn: $isLoggedIn)) {
-                    Text("Create Account")
+                // Register Button
+                Button {
+                    showingRegister = true
+                } label: {
+                    Text("Don't have an account? Register")
                         .foregroundColor(Colors.nasmBlue)
                 }
             }
-            .padding()
-            .animation(.default, value: error)
+            .padding(.vertical, 40)
+            .navigationDestination(isPresented: $showingRegister) {
+                RegisterView()
+                    .environmentObject(authManager)
+            }
+            .alert("Login Error", isPresented: $showingAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(alertMessage)
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Back") {
+                        // action
+                    }
+                    .foregroundColor(Colors.nasmBlue)
+                }
+            }
         }
-    }
-    
-    private var isLoginValid: Bool {
-        !email.trimmingCharacters(in: .whitespaces).isEmpty &&
-        password.count >= 6 // Minimum password length
     }
     
     private func login() {
-        guard isLoginValid else {
-            error = "Please enter a valid email and password"
-            return
-        }
-        
-        isLoading = true
-        error = nil
-        
         Task {
             do {
-                let token = try await APIClient.shared.login(email: email.trimmingCharacters(in: .whitespaces), password: password)
-                
-                await MainActor.run {
-                    DataManager.shared.saveAuthToken(token)
-                    
-                    isLoggedIn = true
-                    isLoading = false
-                }
-            } catch let error as APIError {
-                await MainActor.run {
-                    handleLoginError(error)
-                }
+                try await authManager.login(email: email, password: password)
             } catch {
                 await MainActor.run {
-                    self.error = "An unexpected error occurred: \(error.localizedDescription)"
-                    isLoading = false
+                    alertMessage = error.localizedDescription
+                    showingAlert = true
                 }
             }
         }
-    }
-    
-    private func handleLoginError(_ error: APIError) {
-        switch error {
-        case .unauthorized:
-            self.error = "Invalid email or password"
-        case .validationError(let errors):
-            self.error = errors.joined(separator: "\n")
-        case .networkError(let underlyingError as URLError):
-            switch underlyingError.code {
-            case .notConnectedToInternet:
-                self.error = "No internet connection. Please check your connection and try again."
-            case .timedOut:
-                self.error = "Request timed out. Please try again."
-            case .cannotConnectToHost:
-                self.error = "Cannot connect to server. Please try again later."
-            default:
-                self.error = "Network error: \(underlyingError.localizedDescription)"
-            }
-        case .serverError(let message):
-            self.error = message
-        default:
-            self.error = "An unexpected error occurred"
-        }
-        isLoading = false
     }
 }
 
 #Preview {
-    LoginView(isLoggedIn: .constant(false))
+    LoginView()
+        .environmentObject(AuthManager.shared)
 } 

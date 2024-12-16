@@ -15,6 +15,7 @@ struct Client: Identifiable, Codable {
     var goalsNotes: String
     var sessions: [Session]
     var profileImage: UIImage?
+    var nutritionPlan: String
     
     init(id: UUID = UUID(), 
          name: String = "",
@@ -28,7 +29,8 @@ struct Client: Identifiable, Codable {
          goals: String = "",
          goalsNotes: String = "",
          sessions: [Session] = [],
-         profileImage: UIImage? = nil) {
+         profileImage: UIImage? = nil,
+         nutritionPlan: String = "") {
         self.id = id
         self.name = name
         self.email = email
@@ -42,11 +44,12 @@ struct Client: Identifiable, Codable {
         self.goalsNotes = goalsNotes
         self.sessions = sessions
         self.profileImage = profileImage
+        self.nutritionPlan = nutritionPlan
     }
     
     private enum CodingKeys: String, CodingKey {
         case id, name, email, phoneNumber, age, height, weight, 
-             medicalHistory, notes, goals, goalsNotes, sessions
+             medicalHistory, notes, goals, goalsNotes, sessions, nutritionPlan
     }
     
     func encode(to encoder: Encoder) throws {
@@ -63,6 +66,7 @@ struct Client: Identifiable, Codable {
         try container.encode(goals, forKey: .goals)
         try container.encode(goalsNotes, forKey: .goalsNotes)
         try container.encode(sessions, forKey: .sessions)
+        try container.encode(nutritionPlan, forKey: .nutritionPlan)
     }
 }
 
@@ -105,6 +109,26 @@ struct Exercise: Codable, Identifiable {
     var isPartOfCircuit: Bool
     var circuitRounds: Int?
     var circuitName: String?
+    var setPerformances: [String]
+    
+    enum CodingKeys: String, CodingKey {
+        case id, name, sets, reps, weight, notes, isPartOfCircuit, circuitRounds, circuitName, setPerformances
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        sets = try container.decode(Int.self, forKey: .sets)
+        reps = try container.decode(String.self, forKey: .reps)
+        weight = try container.decode(String.self, forKey: .weight)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes)
+        isPartOfCircuit = try container.decode(Bool.self, forKey: .isPartOfCircuit)
+        circuitRounds = try container.decodeIfPresent(Int.self, forKey: .circuitRounds)
+        circuitName = try container.decodeIfPresent(String.self, forKey: .circuitName)
+        // Handle missing setPerformances for backward compatibility
+        setPerformances = (try? container.decodeIfPresent([String].self, forKey: .setPerformances)) ?? Array(repeating: "", count: sets)
+    }
     
     init(id: UUID = UUID(),
          name: String = "",
@@ -114,7 +138,8 @@ struct Exercise: Codable, Identifiable {
          notes: String? = nil,
          isPartOfCircuit: Bool = false,
          circuitRounds: Int? = nil,
-         circuitName: String? = nil) {
+         circuitName: String? = nil,
+         setPerformances: [String] = []) {
         self.id = id
         self.name = name
         self.sets = sets
@@ -124,6 +149,7 @@ struct Exercise: Codable, Identifiable {
         self.isPartOfCircuit = isPartOfCircuit
         self.circuitRounds = circuitRounds
         self.circuitName = circuitName
+        self.setPerformances = setPerformances.count == sets ? setPerformances : Array(repeating: "", count: sets)
     }
 }
 
