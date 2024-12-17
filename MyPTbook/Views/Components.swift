@@ -241,6 +241,16 @@ struct NutritionNoteView: View {
     let client: Client
     @State private var isEditing = false
     @Binding var isPresented: Bool
+    @State private var keyboardHeight: CGFloat = 0
+    @FocusState private var isTextEditorFocused: Bool
+    
+    init(nutritionPlan: Binding<String>, dataManager: DataManager, client: Client, isPresented: Binding<Bool>) {
+        self._nutritionPlan = nutritionPlan
+        self.dataManager = dataManager
+        self.client = client
+        self._isPresented = isPresented
+        self._tempNutritionPlan = State(initialValue: nutritionPlan.wrappedValue)
+    }
     
     var body: some View {
         VStack(spacing: 20) {
@@ -265,17 +275,16 @@ struct NutritionNoteView: View {
                 
                 Spacer()
                 
-                // Only Edit/Save Button
-                Button {
-                    if isEditing {
+                // Only show Save button when editing
+                if isEditing {
+                    Button {
                         nutritionPlan = tempNutritionPlan
                         saveNutritionPlan()
+                    } label: {
+                        Text("Save")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(Colors.nasmBlue)
                     }
-                    withAnimation { isEditing.toggle() }
-                } label: {
-                    Text(isEditing ? "Save" : "Edit")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(Colors.nasmBlue)
                 }
             }
             .padding(.horizontal, 24)
@@ -317,7 +326,10 @@ struct NutritionNoteView: View {
             }
         }
         .frame(maxWidth: min(UIScreen.main.bounds.width - 48, 392))
-        .frame(maxHeight: UIScreen.main.bounds.height * 0.72)
+        .frame(maxHeight: keyboardHeight > 0 ? 
+            UIScreen.main.bounds.height * 0.5 :  // Smaller height when keyboard is shown
+            UIScreen.main.bounds.height * 0.72    // Original height when keyboard is hidden
+        )
         .background(
             RoundedRectangle(cornerRadius: 20)
                 .fill(Colors.background)
@@ -328,13 +340,41 @@ struct NutritionNoteView: View {
         .offset(y: -50)
         .onAppear {
             tempNutritionPlan = client.nutritionPlan
+            NotificationCenter.default.addObserver(
+                forName: UIResponder.keyboardWillShowNotification,
+                object: nil,
+                queue: .main
+            ) { notification in
+                if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                    withAnimation(.easeInOut(duration: 0.25)) {  // Added animation
+                        keyboardHeight = keyboardFrame.height
+                    }
+                }
+            }
+            
+            NotificationCenter.default.addObserver(
+                forName: UIResponder.keyboardWillHideNotification,
+                object: nil,
+                queue: .main
+            ) { _ in
+                withAnimation(.easeInOut(duration: 0.25)) {  // Added animation
+                    keyboardHeight = 0
+                }
+            }
         }
+        .animation(.easeInOut, value: keyboardHeight)  // Added animation for keyboard height changes
+        .ignoresSafeArea(.keyboard)
     }
     
     private var nutritionCard: some View {
         VStack(alignment: .leading, spacing: 24) {
             if tempNutritionPlan.isEmpty {
-                EmptyNutritionView()
+                EmptyNutritionView {
+                    withAnimation {
+                        isEditing = true
+                        isTextEditorFocused = true
+                    }
+                }
             } else {
                 // Content with improved formatting
                 VStack(alignment: .leading, spacing: 24) {
@@ -385,12 +425,13 @@ struct NutritionNoteView: View {
             TextEditor(text: $tempNutritionPlan)
                 .font(.body)
                 .padding(16)
-                .frame(minHeight: 300)
+                .frame(height: keyboardHeight > 0 ? 300 : 550)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color(.systemBackground))
                         .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
                 )
+                .focused($isTextEditorFocused)
             
             Text("Tip: Organize your plan with sections like 'Breakfast:', 'Lunch:', etc.")
                 .font(.caption)
@@ -398,16 +439,28 @@ struct NutritionNoteView: View {
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 24)
+        .ignoresSafeArea(.keyboard)
     }
     
     private func saveNutritionPlan() {
-        var updatedClient = client
-        updatedClient.nutritionPlan = nutritionPlan
-        if let index = dataManager.clients.firstIndex(where: { $0.id == client.id }) {
-            dataManager.clients[index] = updatedClient
-            dataManager.saveClients()
+        Task {
+            do {
+                var updatedClient = client
+                updatedClient.nutritionPlan = nutritionPlan
+                try await dataManager.updateClient(updatedClient)
+                
+                await MainActor.run {
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("RefreshClientData"),
+                        object: nil
+                    )
+                    isPresented = false
+                }
+            } catch {
+                print("Error saving nutrition plan: \(error)")
+                // You might want to add error handling UI here
+            }
         }
-        NotificationCenter.default.post(name: NSNotification.Name("RefreshClientData"), object: nil)
     }
     
     private func parseNutritionSections() -> [NutritionSectionModel] {
@@ -496,6 +549,105 @@ struct NutritionNoteView: View {
             }
         }
     }
+    
+    // Move EmptyNutritionView here as a nested private struct
+    private struct EmptyNutritionView: View {
+        let startEditing: () -> Void
+        
+        var body: some View {
+            ZStack {
+                // Background icons
+                Group {
+                    // Top row
+                    Image(systemName: "carrot.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(Colors.nasmBlue.opacity(0.15))
+                        .offset(x: -120, y: -80)
+                        .rotationEffect(.degrees(-15))
+                    
+                    Image(systemName: "leaf.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(Colors.nasmBlue.opacity(0.15))
+                        .offset(x: 0, y: -100)
+                        .rotationEffect(.degrees(5))
+                    
+                    Image(systemName: "apple.logo")
+                        .font(.system(size: 32))
+                        .foregroundStyle(Colors.nasmBlue.opacity(0.15))
+                        .offset(x: 120, y: -80)
+                        .rotationEffect(.degrees(15))
+                    
+                    // Middle section (around the button)
+                    Image(systemName: "fork.knife")
+                        .font(.system(size: 32))
+                        .foregroundStyle(Colors.nasmBlue.opacity(0.15))
+                        .offset(x: -140, y: 0)
+                        .rotationEffect(.degrees(-10))
+                    
+                    Image(systemName: "fish.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(Colors.nasmBlue.opacity(0.15))
+                        .offset(x: 140, y: 0)
+                        .rotationEffect(.degrees(10))
+                    
+                    // Lower middle
+                    Image(systemName: "leaf.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(Colors.nasmBlue.opacity(0.15))
+                        .offset(x: -100, y: 80)
+                        .rotationEffect(.degrees(-20))
+                    
+                    Image(systemName: "basket.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(Colors.nasmBlue.opacity(0.15))
+                        .offset(x: 100, y: 80)
+                        .rotationEffect(.degrees(20))
+                    
+                    // Bottom row
+                    Image(systemName: "apple.logo")
+                        .font(.system(size: 32))
+                        .foregroundStyle(Colors.nasmBlue.opacity(0.15))
+                        .offset(x: -120, y: 160)
+                        .rotationEffect(.degrees(-15))
+                    
+                    Image(systemName: "carrot.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(Colors.nasmBlue.opacity(0.15))
+                        .offset(x: 0, y: 180)
+                        .rotationEffect(.degrees(0))
+                    
+                    Image(systemName: "leaf.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(Colors.nasmBlue.opacity(0.15))
+                        .offset(x: 120, y: 160)
+                        .rotationEffect(.degrees(15))
+                }
+                
+                // Main content
+                VStack(spacing: 16) {
+                    Spacer()  // Top spacer
+                    Spacer()  // Additional spacer
+                    Spacer()  // Additional spacer
+                    Spacer()  // Even more spacing to push content lower
+                    Spacer()  // One more for good measure
+                    
+                    Button(action: startEditing) {
+                        Text("Add Nutrition Plan")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                            .background(Colors.nasmBlue)
+                            .cornerRadius(8)
+                    }
+                    
+                    Spacer()  // Bottom spacer
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.vertical, 40)
+        }
+    }
 }
 
 struct NutritionSectionModel {
@@ -538,29 +690,6 @@ struct PremiumMetricPill: View {
     }
 }
 
-// Empty State View
-struct EmptyNutritionView: View {
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "doc.text.fill")
-                .font(.system(size: 32))
-                .foregroundStyle(
-                    .linearGradient(
-                        colors: [Colors.nasmBlue.opacity(0.7), Colors.nasmBlue.opacity(0.3)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-            
-            Text("No nutrition plan added yet")
-                .font(.subheadline)
-                .foregroundColor(.gray)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
-    }
-}
-
 // Keep this version in Components.swift
 struct SessionsListView: View {
     let client: Client
@@ -596,6 +725,181 @@ struct SessionsListView: View {
                     client: client
                 )
             }
+        }
+    }
+}
+
+// MARK: - Info Section
+struct InfoSection: View {
+    let title: String
+    @Binding var text: String
+    let isEditing: Bool
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.bold())
+                .foregroundColor(.primary)
+            
+            if isEditing {
+                TextEditor(text: $text)
+                    .frame(height: 60)
+                    .font(.body.bold())
+                    .padding(4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(.systemGray6))
+                    )
+                    .tint(Colors.nasmBlue)
+            } else {
+                Text(text.isEmpty ? "Not specified" : text)
+                    .font(.body.bold())
+                    .foregroundColor(text.isEmpty ? .gray : .primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Metric View
+struct MetricView: View {
+    let title: String
+    @Binding var value: String
+    let unit: String
+    let isEditing: Bool
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.bold())
+                .foregroundColor(.black)
+            
+            if isEditing {
+                HStack(spacing: 4) {
+                    TextField("0", text: $value)
+                        .keyboardType(.decimalPad)
+                        .font(.body.bold())
+                        .multilineTextAlignment(.leading)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .frame(width: 40)
+                        .foregroundColor(.black)
+                        .tint(Colors.nasmBlue)
+                    Text(unit)
+                        .font(.body.bold())
+                        .foregroundColor(.black)
+                }
+            } else {
+                HStack(spacing: 4) {
+                    Text(value)
+                        .font(.body.bold())
+                        .foregroundColor(.black)
+                    Text(unit)
+                        .font(.body.bold())
+                        .foregroundColor(.black)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Nutrition Plan Editor
+struct NutritionPlanEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var dataManager: DataManager
+    @State private var tempNutritionPlan: String
+    @State private var showingSections = false
+    @State private var isProcessing = false
+    @State private var error: String?
+    @State private var showingError = false
+    
+    let client: Client
+    
+    init(client: Client) {
+        self.client = client
+        _tempNutritionPlan = State(initialValue: client.nutritionPlan)
+    }
+    
+    var body: some View {
+        NavigationStack {
+            VStack {
+                TextEditor(text: $tempNutritionPlan)
+                    .font(.body)
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.white)
+                            .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+                    )
+                    .padding()
+            }
+            .background(Colors.background)
+            .navigationTitle("Nutrition Plan")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        Task {
+                            await saveNutritionPlan()
+                        }
+                    }
+                    .disabled(isProcessing)
+                }
+            }
+            .alert("Error", isPresented: $showingError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(error ?? "An unknown error occurred")
+            }
+        }
+    }
+    
+    private func saveNutritionPlan() async {
+        guard !isProcessing else { return }
+        
+        await MainActor.run {
+            isProcessing = true
+            error = nil
+        }
+        
+        do {
+            var updatedClient = client
+            updatedClient.nutritionPlan = tempNutritionPlan
+            
+            try await dataManager.updateClient(updatedClient)
+            
+            await MainActor.run {
+                isProcessing = false
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("RefreshClientData"),
+                    object: nil
+                )
+                dismiss()
+            }
+        } catch {
+            await MainActor.run {
+                isProcessing = false
+                self.error = handleError(error)
+                showingError = true
+            }
+        }
+    }
+    
+    private func handleError(_ error: Error) -> String {
+        switch error {
+        case APIError.unauthorized:
+            return "Your session has expired. Please log in again"
+        case APIError.serverError(let message):
+            return "Server error: \(message)"
+        case APIError.networkError:
+            return "Network error. Please check your connection"
+        default:
+            return "An unexpected error occurred: \(error.localizedDescription)"
         }
     }
 }

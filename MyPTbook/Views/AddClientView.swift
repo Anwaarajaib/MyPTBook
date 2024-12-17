@@ -20,6 +20,8 @@ struct AddClientView: View {
     @State private var showAlert = false
     @State private var alertMessage = ""
     @State private var nutritionPlan = ""
+    @State private var isProcessing = false
+    @State private var error: String?
     
     // Add these constants at the top of the struct to match ClientDetailView
     private let cardPadding: CGFloat = 24
@@ -67,6 +69,14 @@ struct AddClientView: View {
             } message: {
                 Text(alertMessage)
             }
+            .alert("Error", isPresented: $showAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(error ?? alertMessage)
+            }
+        }
+        .onAppear {
+            print("MainAppView appeared, client count:", dataManager.clients.count)
         }
     }
     
@@ -175,6 +185,31 @@ struct AddClientView: View {
                 .frame(maxWidth: .infinity)
             }
             .padding(.horizontal, cardPadding)
+            
+            // Add Client Button
+            Button {
+                Task {
+                    await saveClient()
+                }
+            } label: {
+                HStack {
+                    Text("Add Client")
+                        .fontWeight(.semibold)
+                    
+                    if isProcessing {
+                        ProgressView()
+                            .tint(.white)
+                            .padding(.leading, 8)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(name.isEmpty ? Color.gray.opacity(0.3) : Colors.nasmBlue)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            }
+            .disabled(name.isEmpty || isProcessing)
+            .padding(.horizontal, cardPadding)
             .padding(.bottom, cardPadding)
         }
         .background(Color.white)
@@ -184,26 +219,15 @@ struct AddClientView: View {
     
     // MARK: - Toolbar Content
     private var toolbarContent: some ToolbarContent {
-        Group {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: { dismiss() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                            .fontWeight(.semibold)
-                        Text("Back")
-                            .fontWeight(.semibold)
-                    }
-                    .foregroundColor(Colors.nasmBlue)
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button(action: { dismiss() }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .fontWeight(.semibold)
+                    Text("Back")
+                        .fontWeight(.semibold)
                 }
-            }
-            
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Add") { 
-                    saveClient() 
-                }
-                .fontWeight(.semibold)
-                .foregroundColor(name.isEmpty ? .gray : Colors.nasmBlue)
-                .disabled(name.isEmpty)
+                .foregroundColor(Colors.nasmBlue)
             }
         }
     }
@@ -218,21 +242,66 @@ struct AddClientView: View {
     }
     
     // MARK: - Save Function
-    private func saveClient() {
-        let newClient = Client(
-            name: name,
-            age: Int(age) ?? 0,
-            height: Double(height) ?? 0.0,
-            weight: Double(weight) ?? 0.0,
-            medicalHistory: medicalHistory,
-            goals: goals,
-            sessions: [],
-            profileImage: selectedImage,
-            nutritionPlan: nutritionPlan
-        )
+    private func saveClient() async {
+        isProcessing = true
         
-        dataManager.addClient(newClient)
-        dismiss()
+        do {
+            let newClient = Client(
+                id: UUID(),
+                name: name,
+                age: Int(age) ?? 0,
+                height: Double(height) ?? 0,
+                weight: Double(weight) ?? 0,
+                medicalHistory: medicalHistory,
+                goals: goals,
+                sessions: [],  // Empty array for new client
+                profileImage: selectedImage,
+                nutritionPlan: ""  // Empty string for new client
+            )
+            
+            let savedClient = try await dataManager.addClient(newClient)
+            print("Client saved successfully:", savedClient)
+            
+            // Save the image if one was selected
+            if let image = selectedImage {
+                DataManager.shared.saveClientImage(image, clientId: savedClient.id)
+                
+                // Update the client's image in memory
+                if let index = dataManager.clients.firstIndex(where: { $0.id == savedClient.id }) {
+                    dataManager.clients[index].profileImage = image
+                }
+            }
+            
+            await MainActor.run {
+                isProcessing = false
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("RefreshClientData"),
+                    object: nil
+                )
+                print("Posted refresh notification")
+                dismiss()
+            }
+        } catch {
+            print("Save client error:", error)
+            await MainActor.run {
+                isProcessing = false
+                self.error = handleError(error)
+                showAlert = true
+            }
+        }
+    }
+    
+    private func handleError(_ error: Error) -> String {
+        switch error {
+        case APIError.unauthorized:
+            return "Your session has expired. Please log in again"
+        case APIError.serverError(let message):
+            return "Server error: \(message)"
+        case APIError.networkError:
+            return "Network error. Please check your connection"
+        default:
+            return "An unexpected error occurred: \(error.localizedDescription)"
+        }
     }
     
     // MARK: - Helper Methods

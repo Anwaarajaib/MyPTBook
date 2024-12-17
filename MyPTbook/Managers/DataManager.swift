@@ -11,23 +11,16 @@ class DataManager: ObservableObject {
     
     // Keys for UserDefaults
     private let isLoggedInKey = "isLoggedIn"
-    private let trainerNameKey = "trainerName"
-    private let trainerImageKey = "trainerImage"
+    private let userNameKey = "userName"
+    private let userImageKey = "userImage"
     private let authTokenKey = "authToken"
     
     // Add a published property for clients
     @Published var clients: [Client] = []
+    @Published var userName: String = "Your Name"
     
     private init() {
-        createDirectoryIfNeeded()
-        loadClients()
-    }
-    
-    private func createDirectoryIfNeeded() {
-        let clientsDirectory = documentsPath.appendingPathComponent("clients")
-        if !fileManager.fileExists(atPath: clientsDirectory.path) {
-            try? fileManager.createDirectory(at: clientsDirectory, withIntermediateDirectories: true)
-        }
+        // No need for local storage initialization anymore
     }
     
     // MARK: - Login State
@@ -55,102 +48,116 @@ class DataManager: ObservableObject {
     }
     
     // MARK: - Trainer Data
-    func saveTrainerName(_ name: String) {
-        defaults.set(name, forKey: trainerNameKey)
+    func saveUserName(_ name: String) {
+        defaults.set(name, forKey: userNameKey)
     }
     
-    func getTrainerName() -> String {
-        defaults.string(forKey: trainerNameKey) ?? "Your Name"
+    func getUserName() -> String {
+        defaults.string(forKey: userNameKey) ?? "Your Name"
     }
     
-    func saveTrainerImage(_ image: UIImage?) {
+    func saveUserImage(_ image: UIImage?) {
         if let image = image,
            let imageData = image.jpegData(compressionQuality: 0.8) {
-            let imageUrl = documentsPath.appendingPathComponent("trainer_profile.jpg")
+            let imageUrl = documentsPath.appendingPathComponent("user_profile.jpg")
             try? imageData.write(to: imageUrl)
-            defaults.set(true, forKey: trainerImageKey)
+            defaults.set(true, forKey: userImageKey)
         } else {
-            defaults.set(false, forKey: trainerImageKey)
-            let imageUrl = documentsPath.appendingPathComponent("trainer_profile.jpg")
+            defaults.set(false, forKey: userImageKey)
+            let imageUrl = documentsPath.appendingPathComponent("user_profile.jpg")
             try? fileManager.removeItem(at: imageUrl)
         }
     }
     
-    func getTrainerImage() -> UIImage? {
-        if defaults.bool(forKey: trainerImageKey) {
-            let imageUrl = documentsPath.appendingPathComponent("trainer_profile.jpg")
+    func getUserImage() -> UIImage? {
+        if defaults.bool(forKey: userImageKey) {
+            let imageUrl = documentsPath.appendingPathComponent("user_profile.jpg")
             return UIImage(contentsOfFile: imageUrl.path)
         }
         return nil
     }
     
     // MARK: - Clients Data
-    func saveClients(_ clients: [Client]) {
-        self.clients = clients
-        let clientsDirectory = documentsPath.appendingPathComponent("clients")
-        
-        // Create directory if it doesn't exist
-        try? fileManager.createDirectory(at: clientsDirectory, withIntermediateDirectories: true)
-        
-        // Clear existing files
-        if let files = try? fileManager.contentsOfDirectory(at: clientsDirectory, includingPropertiesForKeys: nil) {
-            for file in files {
-                try? fileManager.removeItem(at: file)
-            }
+    func fetchClients() async throws -> [Client] {
+        let fetchedClients = try await APIClient.shared.fetchClients()
+        await MainActor.run {
+            self.clients = fetchedClients
         }
-        
-        // Save new client data
-        for client in clients {
-            do {
-                let encoder = JSONEncoder()
-                var clientToSave = client
-                // Ensure nutritionPlan is included in the encoded data
-                clientToSave.nutritionPlan = client.nutritionPlan
-                let data = try encoder.encode(clientToSave)
-                let file = clientsDirectory.appendingPathComponent("\(client.id.uuidString).json")
-                try data.write(to: file)
-                
-                // Save profile image if exists
-                if let image = client.profileImage,
-                   let imageData = image.jpegData(compressionQuality: 0.8) {
-                    let imageFile = clientsDirectory.appendingPathComponent("\(client.id.uuidString).jpg")
-                    try imageData.write(to: imageFile)
-                }
-            } catch {
-                print("Error saving client \(client.id): \(error)")
+        return fetchedClients
+    }
+    
+    func addClient(_ client: Client) async throws -> Client {
+        let createdClient = try await APIClient.shared.createClient(client)
+        await MainActor.run {
+            self.clients.append(createdClient)
+        }
+        return createdClient
+    }
+    
+    func updateClient(_ client: Client) async throws {
+        let updatedClient = try await APIClient.shared.updateClient(client)
+        await MainActor.run {
+            if let index = self.clients.firstIndex(where: { $0.id == client.id }) {
+                self.clients[index] = updatedClient
             }
         }
     }
     
-    func getClients() -> [Client] {
-        let clientsDirectory = documentsPath.appendingPathComponent("clients")
-        var clients: [Client] = []
-        
-        guard let files = try? fileManager.contentsOfDirectory(at: clientsDirectory, includingPropertiesForKeys: nil) else {
-            return []
+    func deleteClient(_ client: Client) async throws {
+        try await APIClient.shared.deleteClient(id: client.id)
+        await MainActor.run {
+            self.clients.removeAll { $0.id == client.id }
         }
-        
-        // Load each client from their JSON file
-        for file in files where file.pathExtension == "json" {
-            do {
-                let data = try Data(contentsOf: file)
-                let decoder = JSONDecoder()
-                var client = try decoder.decode(Client.self, from: data)
-                
-                // Load profile image if it exists
-                let imageFile = file.deletingPathExtension().appendingPathExtension("jpg")
-                if fileManager.fileExists(atPath: imageFile.path) {
-                    client.profileImage = UIImage(contentsOfFile: imageFile.path)
-                }
-                
-                clients.append(client)
-            } catch {
-                print("Error loading client from \(file): \(error)")
+    }
+    
+    // MARK: - Sessions Data
+    func saveClientSessions(clientId: UUID, sessions: [Session]) async throws {
+        let createdSessions = try await APIClient.shared.createSessions(clientId: clientId, sessions: sessions)
+        await MainActor.run {
+            if let index = self.clients.firstIndex(where: { $0.id == clientId }) {
+                self.clients[index].sessions = createdSessions
             }
         }
-        
-        self.clients = clients.sorted { $0.name < $1.name }
-        return self.clients
+    }
+    
+    func getClientSessions(clientId: UUID) async throws -> [Session] {
+        let sessions = try await APIClient.shared.fetchClientSessions(clientId: clientId)
+        return sessions
+    }
+    
+    func updateClientSession(clientId: UUID, session: Session) async throws {
+        let updatedSession = try await APIClient.shared.updateSession(clientId: clientId, session: session)
+        await MainActor.run {
+            if let clientIndex = self.clients.firstIndex(where: { $0.id == clientId }),
+               let sessionIndex = self.clients[clientIndex].sessions.firstIndex(where: { $0.id == session.id }) {
+                self.clients[clientIndex].sessions[sessionIndex] = updatedSession
+            }
+        }
+    }
+    
+    func deleteClientSession(clientId: UUID, sessionId: UUID) async throws {
+        try await APIClient.shared.deleteSession(clientId: clientId, sessionId: sessionId)
+        await MainActor.run {
+            if let clientIndex = self.clients.firstIndex(where: { $0.id == clientId }) {
+                self.clients[clientIndex].sessions.removeAll { $0.id == sessionId }
+                
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("RefreshClientData"),
+                    object: nil,
+                    userInfo: ["clientId": clientId]
+                )
+            }
+        }
+    }
+    
+    func deleteClientSessions(clientId: UUID, sessionNumbers: [Int]) async throws {
+        // You'll need to implement this in your backend or make multiple delete calls
+        for sessionNumber in sessionNumbers {
+            if let session = clients.first(where: { $0.id == clientId })?
+                .sessions.first(where: { $0.sessionNumber == sessionNumber }) {
+                try await deleteClientSession(clientId: clientId, sessionId: session.id)
+            }
+        }
     }
     
     func clearAllData() {
@@ -158,174 +165,59 @@ class DataManager: ObservableObject {
         defaults.removePersistentDomain(forName: domain)
         defaults.synchronize()
         
-        // Remove all files in documents directory
-        let clientsDirectory = documentsPath.appendingPathComponent("clients")
-        try? fileManager.removeItem(at: clientsDirectory)
-        let trainerImage = documentsPath.appendingPathComponent("trainer_profile.jpg")
-        try? fileManager.removeItem(at: trainerImage)
+        // Remove user profile image
+        let userImage = documentsPath.appendingPathComponent("user_profile.jpg")
+        try? fileManager.removeItem(at: userImage)
         
-        // Recreate clients directory
-        createDirectoryIfNeeded()
-    }
-    
-    func fetchClients() async throws -> [Client] {
-        // For now, return the locally stored clients
-        // Later you can implement API fetching here
-        return getClients()
-    }
-    
-    func addClient(_ client: Client) {
-        clients.append(client)
-        saveClients(clients)
-    }
-    
-    // Load clients from local storage
-    private func loadClients() {
-        let clientsDirectory = documentsPath.appendingPathComponent("clients")
-        
-        guard let files = try? fileManager.contentsOfDirectory(at: clientsDirectory, includingPropertiesForKeys: nil) else {
-            return
-        }
-        
-        for file in files where file.pathExtension == "json" {
-            do {
-                let data = try Data(contentsOf: file)
-                let decoder = JSONDecoder()
-                var client = try decoder.decode(Client.self, from: data)
-                
-                // Load profile image if it exists
-                let imageFile = file.deletingPathExtension().appendingPathExtension("jpg")
-                if fileManager.fileExists(atPath: imageFile.path) {
-                    client.profileImage = UIImage(contentsOfFile: imageFile.path)
-                }
-                
-                clients.append(client)
-            } catch {
-                print("Error loading client from \(file): \(error)")
-            }
-        }
-    }
-    
-    // Save clients to local storage
-    func saveClients() {
-        let clientsDirectory = documentsPath.appendingPathComponent("clients")
-        
-        // Create directory if it doesn't exist
-        try? fileManager.createDirectory(at: clientsDirectory, withIntermediateDirectories: true)
-        
-        // Clear existing files
-        if let files = try? fileManager.contentsOfDirectory(at: clientsDirectory, includingPropertiesForKeys: nil) {
-            for file in files {
-                try? fileManager.removeItem(at: file)
-            }
-        }
-        
-        // Save new client data
-        for client in clients {
-            do {
-                let encoder = JSONEncoder()
-                let data = try encoder.encode(client)
-                let file = clientsDirectory.appendingPathComponent("\(client.id.uuidString).json")
-                try data.write(to: file)
-                
-                // Save profile image if exists
-                if let image = client.profileImage,
-                   let imageData = image.jpegData(compressionQuality: 0.8) {
-                    let imageFile = clientsDirectory.appendingPathComponent("\(client.id.uuidString).jpg")
-                    try imageData.write(to: imageFile)
-                }
-            } catch {
-                print("Error saving client \(client.id): \(error)")
-            }
-        }
+        // Clear clients array
+        clients = []
     }
     
     func clearAuthToken() {
         removeAuthToken()
     }
     
-    // Add helper methods for client-specific operations
-    func saveClientSessions(clientId: UUID, sessions: [Session]) {
-        // Find the specific client
-        if let index = clients.firstIndex(where: { $0.id == clientId }) {
-            // Update only that client's sessions
-            clients[index].sessions = sessions
-            // Save all clients to persist the changes
-            saveClients(clients)
-            print("Saved \(sessions.count) sessions for client ID: \(clientId)")
+    // Add these methods to DataManager
+    func saveClientImage(_ image: UIImage?, clientId: UUID) {
+        if let image = image,
+           let imageData = image.jpegData(compressionQuality: 0.8) {
+            let imageUrl = documentsPath.appendingPathComponent("client_\(clientId.uuidString).jpg")
+            try? imageData.write(to: imageUrl)
+        } else {
+            let imageUrl = documentsPath.appendingPathComponent("client_\(clientId.uuidString).jpg")
+            try? fileManager.removeItem(at: imageUrl)
         }
     }
     
-    func getClientSessions(clientId: UUID) -> [Session] {
-        // Get sessions only for the specific client
-        if let client = clients.first(where: { $0.id == clientId }) {
-            print("Retrieved \(client.sessions.count) sessions for client ID: \(clientId)")
-            return client.sessions
-        }
-        return []
+    func getClientImage(clientId: UUID) -> UIImage? {
+        let imageUrl = documentsPath.appendingPathComponent("client_\(clientId.uuidString).jpg")
+        return UIImage(contentsOfFile: imageUrl.path)
     }
     
-    func updateClientSession(clientId: UUID, session: Session) {
-        // Find the specific client
-        if let clientIndex = clients.firstIndex(where: { $0.id == clientId }) {
-            // Find and update only that specific session
-            if let sessionIndex = clients[clientIndex].sessions.firstIndex(where: { $0.id == session.id }) {
-                clients[clientIndex].sessions[sessionIndex] = session
-                // Save all clients to persist the changes
-                saveClients(clients)
-                print("Updated session \(session.id) for client ID: \(clientId)")
-            }
-        }
+    func deleteClientImage(clientId: UUID) {
+        let imageUrl = documentsPath.appendingPathComponent("client_\(clientId.uuidString).jpg")
+        try? fileManager.removeItem(at: imageUrl)
     }
     
-    func deleteClientSession(clientId: UUID, sessionId: UUID) {
-        // Find the specific client
-        if let clientIndex = clients.firstIndex(where: { $0.id == clientId }) {
-            // Remove only the specific session
-            clients[clientIndex].sessions.removeAll { session in
-                session.id == sessionId
-            }
-            
-            // Save changes
-            saveClients(clients)
-            
-            // Notify observers
-            objectWillChange.send()
-            
-            // Post notification for UI update
-            NotificationCenter.default.post(
-                name: NSNotification.Name("RefreshClientData"),
-                object: nil,
-                userInfo: ["clientId": clientId]
-            )
-            
-            print("Deleted session \(sessionId) for client ID: \(clientId)")
-        }
+    // MARK: - Auth and Trainer Data
+    func handleLoginSuccess(response: LoginResponse) {
+        saveAuthToken(response.token)
+        saveUserName(response.user.name)
+        setLoggedIn(true)
     }
     
-    // Add this method for deleting multiple sessions
-    func deleteClientSessions(clientId: UUID, sessionNumbers: [Int]) {
-        // Find the specific client
-        if let clientIndex = clients.firstIndex(where: { $0.id == clientId }) {
-            // Remove the specified sessions
-            clients[clientIndex].sessions.removeAll { session in
-                sessionNumbers.contains(session.sessionNumber)
-            }
-            
-            // Save changes
-            saveClients(clients)
-            
-            // Notify observers
-            objectWillChange.send()
-            
-            // Post notification for UI update
-            NotificationCenter.default.post(
-                name: NSNotification.Name("RefreshClientData"),
-                object: nil,
-                userInfo: ["clientId": clientId]
-            )
-            
-            print("Deleted sessions \(sessionNumbers) for client ID: \(clientId)")
+    func logout() {
+        clearAllData()
+        NotificationCenter.default.post(name: NSNotification.Name("LogoutNotification"), object: nil)
+    }
+    
+    // MARK: - Trainer Profile Methods
+    func updateUserProfile(name: String, image: UIImage?) async throws {
+        let response = try await APIClient.shared.updateUserProfile(name: name)
+        
+        await MainActor.run {
+            saveUserName(response.name)
+            saveUserImage(image)
         }
     }
 }

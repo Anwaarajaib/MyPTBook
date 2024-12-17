@@ -3,13 +3,19 @@ import SwiftUI
 // MARK: - Main Application View
 struct MainAppView: View {
     @StateObject private var dataManager = DataManager.shared
+    @EnvironmentObject private var authManager: AuthManager
     @State private var clients: [Client] = []
     @State private var isLoading = false
     @State private var error: String?
     @State private var showingAddClient = false
-    @State private var showingTrainerProfile = false
-    @State private var trainerName: String = DataManager.shared.getTrainerName()
-    @State private var trainerImage: UIImage? = DataManager.shared.getTrainerImage()
+    @State private var showingProfile = false
+    @State private var trainerName: String = DataManager.shared.getUserName()
+    @State private var trainerImage: UIImage? = DataManager.shared.getUserImage()
+    
+    // Add observer for profile updates
+    private let profileUpdatePublisher = NotificationCenter.default.publisher(
+        for: NSNotification.Name("ProfileImageUpdated")
+    )
     
     let columns = [
         GridItem(.adaptive(minimum: 150, maximum: 150), spacing: 52)
@@ -63,7 +69,7 @@ struct MainAppView: View {
                         Spacer()
                         
                         // Profile image button
-                        Button(action: { showingTrainerProfile = true }) {
+                        Button(action: { showingProfile = true }) {
                             if let profileImage = trainerImage {
                                 Image(uiImage: profileImage)
                                     .resizable()
@@ -139,15 +145,19 @@ struct MainAppView: View {
             .sheet(isPresented: $showingAddClient) {
                 AddClientView(dataManager: dataManager)
             }
-            .sheet(isPresented: $showingTrainerProfile) {
-                TrainerProfileView(
+            .sheet(isPresented: $showingProfile) {
+                UserProfileView(
                     name: $trainerName,
-                    profileImage: $trainerImage
+                    profileImage: .constant(DataManager.shared.getUserImage())
                 )
+                .environmentObject(authManager)
             }
         }
         .background(Colors.background)
         .accentColor(Colors.nasmBlue)
         .tint(Colors.nasmBlue)
+        .onReceive(profileUpdatePublisher) { _ in
+            trainerImage = DataManager.shared.getUserImage()
+        }
     }
 } 

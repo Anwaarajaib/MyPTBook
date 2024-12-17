@@ -9,6 +9,9 @@ struct SessionDetailView: View {
     @State private var exercises: [Exercise]
     @State private var showingAddExercise = false
     @State private var showingDeleteAlert = false
+    @State private var isProcessing = false
+    @State private var error: String?
+    @State private var showingError = false
     
     // MARK: - Initialization
     init(session: Session, clientId: UUID) {
@@ -95,6 +98,11 @@ struct SessionDetailView: View {
                 print("SessionDetailView - After append, exercise sets: \(exercises.last?.sets ?? 0)")
                 saveChanges()
             }
+        }
+        .alert("Error", isPresented: $showingError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(error ?? "An unknown error occurred")
         }
     }
     
@@ -370,32 +378,104 @@ struct SessionDetailView: View {
     
     // MARK: - Helper Functions
     private func saveChanges() {
-        var updatedSession = session
-        print("Saving changes for client: \(clientId), session: \(session.sessionNumber)")
-        updatedSession.exercises = exercises
-        DataManager.shared.updateClientSession(clientId: clientId, session: updatedSession)
-        NotificationCenter.default.post(name: NSNotification.Name("RefreshClientData"), object: nil)
+        guard !isProcessing else { return }
+        
+        Task {
+            await MainActor.run {
+                isProcessing = true
+                error = nil
+            }
+            
+            do {
+                var updatedSession = session
+                updatedSession.exercises = exercises
+                
+                try await DataManager.shared.updateClientSession(
+                    clientId: clientId,
+                    session: updatedSession
+                )
+                
+                await MainActor.run {
+                    isProcessing = false
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("RefreshClientData"),
+                        object: nil
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    isProcessing = false
+                    self.error = handleError(error)
+                    showingError = true
+                }
+            }
+        }
     }
     
     private func deleteSession() {
-        print("Deleting session \(session.sessionNumber) for client: \(clientId)")
+        guard !isProcessing else { return }
         
-        // Delete the session
-        DataManager.shared.deleteClientSession(clientId: clientId, sessionId: session.id)
-        
-        // Dismiss after deletion is complete
-        DispatchQueue.main.async {
-            self.presentationMode.wrappedValue.dismiss()
+        Task {
+            await MainActor.run {
+                isProcessing = true
+                error = nil
+            }
+            
+            do {
+                try await DataManager.shared.deleteClientSession(
+                    clientId: clientId,
+                    sessionId: session.id
+                )
+                
+                await MainActor.run {
+                    isProcessing = false
+                    presentationMode.wrappedValue.dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    isProcessing = false
+                    self.error = handleError(error)
+                    showingError = true
+                }
+            }
         }
     }
     
     private func completeSession() {
-        var updatedSession = session
-        updatedSession.isCompleted = true
-        print("Completing session \(session.sessionNumber) for client: \(clientId)")
-        DataManager.shared.updateClientSession(clientId: clientId, session: updatedSession)
-        NotificationCenter.default.post(name: NSNotification.Name("RefreshClientData"), object: nil)
-        dismiss()
+        guard !isProcessing else { return }
+        
+        Task {
+            await MainActor.run {
+                isProcessing = true
+                error = nil
+            }
+            
+            do {
+                var updatedSession = session
+                updatedSession.isCompleted = true
+                
+                try await DataManager.shared.updateClientSession(
+                    clientId: clientId,
+                    session: updatedSession
+                )
+                
+                await MainActor.run {
+                    isProcessing = false
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("RefreshClientData"),
+                        object: nil,
+                        userInfo: ["clientId": clientId]
+                    )
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    isProcessing = false
+                    self.error = handleError(error)
+                    showingError = true
+                }
+            }
+        }
     }
     
     private func formatRepsDisplay(_ reps: String) -> String {
@@ -424,6 +504,19 @@ struct SessionDetailView: View {
         case 2: return "2nd"
         case 3: return "3rd"
         default: return "\(num)th"
+        }
+    }
+    
+    private func handleError(_ error: Error) -> String {
+        switch error {
+        case APIError.unauthorized:
+            return "Your session has expired. Please log in again"
+        case APIError.serverError(let message):
+            return "Server error: \(message)"
+        case APIError.networkError:
+            return "Network error. Please check your connection"
+        default:
+            return "An unexpected error occurred: \(error.localizedDescription)"
         }
     }
 }

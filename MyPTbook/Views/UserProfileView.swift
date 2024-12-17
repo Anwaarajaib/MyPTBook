@@ -1,7 +1,7 @@
 import SwiftUI
 import PhotosUI
 
-struct TrainerProfileView: View {
+struct UserProfileView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var authManager: AuthManager
     @Binding var name: String
@@ -60,6 +60,11 @@ struct TrainerProfileView: View {
                     }
                 }
                 Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(alertMessage)
+            }
+            .alert("Error", isPresented: $showAlert) {
+                Button("OK", role: .cancel) { }
             } message: {
                 Text(alertMessage)
             }
@@ -129,9 +134,11 @@ struct TrainerProfileView: View {
         VStack(alignment: .center, spacing: 8) {
             if isEditing {
                 TextField("Enter your name", text: $tempName)
-                    .textFieldStyle(PlainTextFieldStyle())
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
                     .font(.title2)
                     .multilineTextAlignment(.center)
+                    .frame(width: 200)
+                    .tint(Colors.nasmBlue)
             } else {
                 Text(tempName.isEmpty ? name : tempName)
                     .font(.title2)
@@ -195,14 +202,36 @@ struct TrainerProfileView: View {
     
     private func handleEditSave() {
         if isEditing {
-            name = tempName
-            profileImage = tempImage
-            DataManager.shared.saveTrainerName(tempName)
-            DataManager.shared.saveTrainerImage(tempImage)
-            dismiss()
-        }
-        withAnimation {
-            isEditing.toggle()
+            Task {
+                do {
+                    // Update backend first
+                    try await DataManager.shared.updateUserProfile(name: tempName, image: tempImage)
+                    
+                    await MainActor.run {
+                        // Only update local state if backend update was successful
+                        name = tempName
+                        profileImage = tempImage
+                        isEditing = false
+                        
+                        // Notify about profile image update
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("ProfileImageUpdated"),
+                            object: nil
+                        )
+                        
+                        dismiss()
+                    }
+                } catch {
+                    await MainActor.run {
+                        alertMessage = "Failed to update profile: \(error.localizedDescription)"
+                        showAlert = true
+                    }
+                }
+            }
+        } else {
+            withAnimation {
+                isEditing.toggle()
+            }
         }
     }
     

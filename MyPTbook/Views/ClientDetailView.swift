@@ -34,6 +34,8 @@ struct ClientDetailView: View {
     @State private var alertMessage = ""
     @State private var showingNutritionNote = false
     @State private var nutritionPlan: String = ""
+    @State private var error: String?
+    @State private var showingError = false
     
     // Initialize nutritionPlan with client's value
     init(dataManager: DataManager, client: Client) {
@@ -47,27 +49,26 @@ struct ClientDetailView: View {
             forName: NSNotification.Name("DeleteSessionCard"),
             object: nil,
             queue: .main
-        ) { notification in
+        ) { [weak dataManager] notification in
             if let sessionNumbers = notification.userInfo?["sessionNumbers"] as? [Int],
                let clientId = notification.userInfo?["clientId"] as? UUID,
                clientId == client.id {
-                var updatedClient = client
-                updatedClient.sessions.removeAll { session in
-                    sessionNumbers.contains(session.sessionNumber)
-                }
-                
-                // Update client in DataManager
-                if let index = dataManager.clients.firstIndex(where: { $0.id == client.id }) {
-                    dataManager.clients[index] = updatedClient
-                    dataManager.saveClients()
-                    
-                    // Post notification to refresh data
-                    NotificationCenter.default.post(name: NSNotification.Name("RefreshClientData"), object: nil)
+                Task { @MainActor in
+                    do {
+                        guard let dataManager = dataManager else { return }
+                        for sessionNumber in sessionNumbers {
+                            if let session = client.sessions.first(where: { $0.sessionNumber == sessionNumber }) {
+                                try await dataManager.deleteClientSession(clientId: client.id, sessionId: session.id)
+                            }
+                        }
+                    } catch {
+                        print("Error deleting sessions: \(error)")
+                    }
                 }
             }
         }
         
-        // Update the notification observer in ClientDetailView init
+        // Update the refresh notification observer
         NotificationCenter.default.addObserver(
             forName: NSNotification.Name("RefreshClientData"),
             object: nil,
@@ -75,13 +76,20 @@ struct ClientDetailView: View {
         ) { [weak dataManager] notification in
             if let notificationClientId = notification.userInfo?["clientId"] as? UUID,
                notificationClientId == client.id {
-                // Force refresh the view
-                dataManager?.objectWillChange.send()
-                
-                // Get updated client data
-                if let updatedClient = dataManager?.getClients().first(where: { $0.id == client.id }) {
-                    if let index = dataManager?.clients.firstIndex(where: { $0.id == client.id }) {
-                        dataManager?.clients[index] = updatedClient
+                Task { @MainActor in
+                    do {
+                        guard let dataManager = dataManager else { return }
+                        // Force refresh the view
+                        dataManager.objectWillChange.send()
+                        
+                        // Fetch updated client data
+                        let clients = try await dataManager.fetchClients()
+                        if let updatedClient = clients.first(where: { $0.id == client.id }),
+                           let index = dataManager.clients.firstIndex(where: { $0.id == client.id }) {
+                            dataManager.clients[index] = updatedClient
+                        }
+                    } catch {
+                        print("Error refreshing client data: \(error)")
                     }
                 }
             }
@@ -256,18 +264,16 @@ struct ClientDetailView: View {
                     Button(role: .destructive) {
                         showingDeleteAlert = true
                     } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "trash")
-                            Text("Delete Client")
-                                .font(.headline)
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: minimumTapTarget)
-                        .background(Color.red.opacity(0.9))
-                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-                        .shadow(color: .red.opacity(0.2), radius: 8, x: 0, y: 4)
+                        Text("Delete Client")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.red)
+                            .foregroundColor(.white)
+                            .cornerRadius(12)
+                            .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
                     }
+                    .padding(.horizontal, 24)
                     .padding(.top, 12)
                     .transition(.opacity)
                 }
@@ -296,13 +302,18 @@ struct ClientDetailView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(isEditing ? "Save" : "Edit") {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            if isEditing {
-                                saveChanges()
-                            } else {
-                                startEditing()
+                        if isEditing {
+                            Task {
+                                await saveChanges()
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    isEditing.toggle()
+                                }
                             }
-                            isEditing.toggle()
+                        } else {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                startEditing()
+                                isEditing.toggle()
+                            }
                         }
                     }
                     .fontWeight(.semibold)
@@ -312,8 +323,9 @@ struct ClientDetailView: View {
         }
         .alert("Delete Client", isPresented: $showingDeleteAlert) {
             Button("Delete", role: .destructive) {
-                deleteClient()
-                dismiss()
+                Task {
+                    await deleteClient()
+                }
             }
             Button("Cancel", role: .cancel) { }
         } message: {
@@ -385,6 +397,11 @@ struct ClientDetailView: View {
             }
         }
         .animation(.easeInOut, value: showingNutritionNote)
+        .alert("Error", isPresented: $showingError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(error ?? "An unknown error occurred")
+        }
     }
     
     private func startEditing() {
@@ -398,92 +415,76 @@ struct ClientDetailView: View {
         nutritionPlan = client.nutritionPlan
     }
     
-    private func saveChanges() {
-        var updatedClient = client
-        updatedClient.name = editedName
-        updatedClient.age = Int(editedAge) ?? client.age
-        updatedClient.height = Double(editedHeight) ?? client.height
-        updatedClient.weight = Double(editedWeight) ?? client.weight
-        updatedClient.medicalHistory = editedMedicalHistory
-        updatedClient.goals = editedGoals
-        updatedClient.profileImage = editedImage
-        updatedClient.nutritionPlan = nutritionPlan
-        
-        // Update the client in DataManager
-        if let index = dataManager.clients.firstIndex(where: { $0.id == client.id }) {
-            dataManager.clients[index] = updatedClient
-            dataManager.saveClients()
+    private func saveChanges() async {
+        do {
+            var updatedClient = client
+            updatedClient.name = editedName
+            updatedClient.age = Int(editedAge) ?? client.age
+            updatedClient.height = Double(editedHeight) ?? client.height
+            updatedClient.weight = Double(editedWeight) ?? client.weight
+            updatedClient.medicalHistory = editedMedicalHistory
+            updatedClient.goals = editedGoals
+            updatedClient.profileImage = editedImage
+            updatedClient.nutritionPlan = nutritionPlan
             
-            // Post notification to refresh data
-            NotificationCenter.default.post(name: NSNotification.Name("RefreshClientData"), object: nil)
-        }
-    }
-    
-    private func deleteClient() {
-        if let index = dataManager.clients.firstIndex(where: { $0.id == client.id }) {
-            dataManager.clients.remove(at: index)
-            dataManager.saveClients()
-        }
-    }
-}
-
-struct MetricView: View {
-    let title: String
-    @Binding var value: String
-    let unit: String
-    let isEditing: Bool
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.subheadline.bold())
-                .foregroundColor(.primary)
-            if isEditing {
-                HStack(spacing: 4) {
-                    TextField("0", text: $value)
-                        .keyboardType(.decimalPad)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .frame(width: 50)
-                    Text(unit)
-                        .font(.caption.bold())
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                        .fixedSize()
+            // Save the image first
+            if editedImage != client.profileImage {
+                DataManager.shared.saveClientImage(editedImage, clientId: client.id)
+            }
+            
+            try await dataManager.updateClient(updatedClient)
+            
+            await MainActor.run {
+                // Update the client's image in memory
+                if let index = dataManager.clients.firstIndex(where: { $0.id == client.id }) {
+                    dataManager.clients[index].profileImage = editedImage
                 }
-            } else {
-                Text("\(value) \(unit)")
-                    .font(.body.bold())
+                
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("RefreshClientData"),
+                    object: nil
+                )
+            }
+        } catch {
+            await MainActor.run {
+                self.error = handleError(error)
+                showingError = true
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    
+    private func deleteClient() async {
+        do {
+            // Delete the client's image first
+            DataManager.shared.deleteClientImage(clientId: client.id)
+            
+            // Then delete the client from the backend
+            try await dataManager.deleteClient(client)
+            
+            await MainActor.run {
+                dismiss()
+            }
+        } catch {
+            await MainActor.run {
+                self.error = handleError(error)
+                showingError = true
+            }
+        }
+    }
+    
+    private func handleError(_ error: Error) -> String {
+        switch error {
+        case APIError.unauthorized:
+            return "Your session has expired. Please log in again"
+        case APIError.serverError(let message):
+            return "Server error: \(message)"
+        case APIError.networkError:
+            return "Network error. Please check your connection"
+        default:
+            return "An unexpected error occurred: \(error.localizedDescription)"
+        }
     }
 }
-
-struct InfoSection: View {
-    let title: String
-    @Binding var text: String
-    let isEditing: Bool
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.subheadline.bold())
-                .foregroundColor(.primary)
-            if isEditing {
-                TextEditor(text: $text)
-                    .frame(height: 60)
-                    .padding(4)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
-            } else {
-                Text(text)
-                    .font(.body.bold())
-                    .lineLimit(3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-    }
-} 
 
 // Add this button style
 struct ScaleButtonStyle: ButtonStyle {

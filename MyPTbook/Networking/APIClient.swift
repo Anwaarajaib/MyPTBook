@@ -13,11 +13,7 @@ enum APIError: Error {
 class APIClient {
     static let shared = APIClient()
     
-    #if DEBUG
-    private let baseURL = "https://my-pt-book-app-backend.vercel.app/api"
-    #else
-    private let baseURL = "https://your-production-server.com/api"  // Replace with your production URL when ready
-    #endif
+    private let baseURL = "http://192.168.70.102:5001/api"
     
     private var authToken: String? {
         get {
@@ -115,16 +111,13 @@ class APIClient {
     
     // Update fetchClients to handle server-side data
     func fetchClients() async throws -> [Client] {
-        guard let token = authToken else {
-            throw APIError.unauthorized
-        }
-        
         guard let url = URL(string: "\(baseURL)/clients") else {
             throw APIError.invalidURL
         }
         
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        var request = configuredURLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(authToken ?? "")", forHTTPHeaderField: "Authorization")
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
@@ -135,10 +128,8 @@ class APIClient {
         switch httpResponse.statusCode {
         case 200:
             let clients = try JSONDecoder().decode([Client].self, from: data)
-            DataManager.shared.saveClients(clients) // Cache clients locally
             return clients
         case 401:
-            authToken = nil // Clear invalid token
             throw APIError.unauthorized
         default:
             throw APIError.serverError("Server error: \(httpResponse.statusCode)")
@@ -148,28 +139,37 @@ class APIClient {
     // Login method
     func login(email: String, password: String) async throws -> String {
         guard let url = URL(string: "\(baseURL)/auth/login") else {
+            print("Invalid URL: \(baseURL)/auth/login")
             throw APIError.invalidURL
         }
+        
+        print("Attempting to connect to: \(url.absoluteString)")
         
         var request = configuredURLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        let body = ["email": email.lowercased(), "password": password]
-        request.httpBody = try JSONEncoder().encode(body)
+        let loginData = ["email": email.lowercased(), "password": password]
+        request.httpBody = try JSONEncoder().encode(loginData)
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             
             guard let httpResponse = response as? HTTPURLResponse else {
+                print("Invalid response type")
                 throw APIError.serverError("Invalid response")
             }
             
+            print("Response status code: \(httpResponse.statusCode)")
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("Response data: \(responseString)")
+            }
+            
             switch httpResponse.statusCode {
-            case 200, 201:
-                let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
-                self.authToken = tokenResponse.token
-                return tokenResponse.token
+            case 200:
+                let loginResponse = try JSONDecoder().decode(LoginResponse.self, from: data)
+                self.authToken = loginResponse.token
+                return loginResponse.token
             case 401:
                 throw APIError.unauthorized
             case 400:
@@ -180,8 +180,13 @@ class APIClient {
             default:
                 throw APIError.serverError("Server error: \(httpResponse.statusCode)")
             }
+        } catch let error as URLError {
+            print("URLError: \(error.localizedDescription)")
+            print("Error code: \(error.code)")
+            throw APIError.networkError(error)
         } catch {
-            throw handleNetworkError(error)
+            print("Other error: \(error.localizedDescription)")
+            throw error
         }
     }
     
@@ -255,6 +260,243 @@ class APIClient {
         }
         return .serverError(error.localizedDescription)
     }
+    
+    // MARK: - Client Methods
+    func createClient(_ client: Client) async throws -> Client {
+        guard let url = URL(string: "\(baseURL)/clients") else {
+            throw APIError.invalidURL
+        }
+        
+        guard let token = authToken else {
+            throw APIError.unauthorized
+        }
+        
+        var request = configuredURLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(client)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.serverError("Invalid response")
+        }
+        
+        switch httpResponse.statusCode {
+        case 201:
+            return try JSONDecoder().decode(Client.self, from: data)
+        case 401:
+            throw APIError.unauthorized
+        default:
+            throw APIError.serverError("Server error: \(httpResponse.statusCode)")
+        }
+    }
+    
+    func updateClient(_ client: Client) async throws -> Client {
+        guard let url = URL(string: "\(baseURL)/clients/\(client.id)") else {
+            throw APIError.invalidURL
+        }
+        
+        var request = configuredURLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(authToken ?? "")", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(client)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.serverError("Invalid response")
+        }
+        
+        switch httpResponse.statusCode {
+        case 200:
+            return try JSONDecoder().decode(Client.self, from: data)
+        case 401:
+            throw APIError.unauthorized
+        default:
+            throw APIError.serverError("Server error: \(httpResponse.statusCode)")
+        }
+    }
+    
+    func deleteClient(id: UUID) async throws {
+        guard let url = URL(string: "\(baseURL)/clients/\(id.uuidString)") else {
+            throw APIError.invalidURL
+        }
+        
+        print("Deleting client with ID:", id.uuidString) // Debug log
+        
+        var request = configuredURLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(authToken ?? "")", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.serverError("Invalid response")
+        }
+        
+        print("Delete response code:", httpResponse.statusCode) // Debug log
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("Response data:", responseString) // Debug log
+        }
+        
+        switch httpResponse.statusCode {
+        case 200:
+            return
+        case 401:
+            throw APIError.unauthorized
+        case 404:
+            throw APIError.serverError("Client not found")
+        default:
+            throw APIError.serverError("Server error: \(httpResponse.statusCode)")
+        }
+    }
+    
+    // MARK: - Session Methods
+    func fetchClientSessions(clientId: UUID) async throws -> [Session] {
+        guard let url = URL(string: "\(baseURL)/clients/\(clientId)/sessions") else {
+            throw APIError.invalidURL
+        }
+        
+        var request = configuredURLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(authToken ?? "")", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.serverError("Invalid response")
+        }
+        
+        switch httpResponse.statusCode {
+        case 200:
+            return try JSONDecoder().decode([Session].self, from: data)
+        case 401:
+            throw APIError.unauthorized
+        default:
+            throw APIError.serverError("Server error: \(httpResponse.statusCode)")
+        }
+    }
+    
+    func createSessions(clientId: UUID, sessions: [Session]) async throws -> [Session] {
+        guard let url = URL(string: "\(baseURL)/clients/\(clientId)/sessions") else {
+            throw APIError.invalidURL
+        }
+        
+        var request = configuredURLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(authToken ?? "")", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let payload = ["sessions": sessions]
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(payload)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.serverError("Invalid response")
+        }
+        
+        switch httpResponse.statusCode {
+        case 201:
+            return try JSONDecoder().decode([Session].self, from: data)
+        case 401:
+            throw APIError.unauthorized
+        default:
+            throw APIError.serverError("Server error: \(httpResponse.statusCode)")
+        }
+    }
+    
+    func updateSession(clientId: UUID, session: Session) async throws -> Session {
+        guard let url = URL(string: "\(baseURL)/clients/\(clientId)/sessions/\(session.id)") else {
+            throw APIError.invalidURL
+        }
+        
+        var request = configuredURLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(authToken ?? "")", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(session)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.serverError("Invalid response")
+        }
+        
+        switch httpResponse.statusCode {
+        case 200:
+            return try JSONDecoder().decode(Session.self, from: data)
+        case 401:
+            throw APIError.unauthorized
+        default:
+            throw APIError.serverError("Server error: \(httpResponse.statusCode)")
+        }
+    }
+    
+    func deleteSession(clientId: UUID, sessionId: UUID) async throws {
+        guard let url = URL(string: "\(baseURL)/clients/\(clientId)/sessions/\(sessionId)") else {
+            throw APIError.invalidURL
+        }
+        
+        var request = configuredURLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(authToken ?? "")", forHTTPHeaderField: "Authorization")
+        
+        let (_, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.serverError("Invalid response")
+        }
+        
+        switch httpResponse.statusCode {
+        case 200:
+            return
+        case 401:
+            throw APIError.unauthorized
+        default:
+            throw APIError.serverError("Server error: \(httpResponse.statusCode)")
+        }
+    }
+    
+    // Add to APIClient class
+    func updateUserProfile(name: String) async throws -> UserResponse {
+        guard let url = URL(string: "\(baseURL)/auth/profile") else {
+            throw APIError.invalidURL
+        }
+        
+        var request = configuredURLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(authToken ?? "")", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body = ["name": name]
+        request.httpBody = try JSONEncoder().encode(body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.serverError("Invalid response")
+        }
+        
+        switch httpResponse.statusCode {
+        case 200:
+            return try JSONDecoder().decode(UserResponse.self, from: data)
+        case 401:
+            throw APIError.unauthorized
+        default:
+            throw APIError.serverError("Server error: \(httpResponse.statusCode)")
+        }
+    }
 }
 
 struct ErrorResponse: Codable {
@@ -263,4 +505,15 @@ struct ErrorResponse: Codable {
 
 struct TokenResponse: Codable {
     let token: String
+}
+
+struct LoginResponse: Codable {
+    let token: String
+    let user: UserResponse
+}
+
+struct UserResponse: Codable {
+    let id: String
+    let name: String
+    let email: String
 }

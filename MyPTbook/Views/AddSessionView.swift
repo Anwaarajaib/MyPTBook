@@ -2,16 +2,22 @@ import SwiftUI
 
 struct AddSessionView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var Text = ""
+    @State private var text = ""
     @State private var isProcessing = false
+    @State private var error: String?
+    @State private var showingError = false
     let client: Client
     
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
+                if let error = error {
+                    ErrorBanner(message: error)
+                }
+                
                 // Blank Note Card
                 VStack {
-                    TextEditor(text: $Text)
+                    TextEditor(text: $text)
                         .font(.body)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding()
@@ -30,16 +36,23 @@ struct AddSessionView: View {
                         await addSessions()
                     }
                 }) {
-                    SwiftUICore.Text(isProcessing ? "Adding..." : "Add Session")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Colors.nasmBlue)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    HStack {
+                        if isProcessing {
+                            ProgressView()
+                                .tint(.white)
+                                .padding(.trailing, 5)
+                        }
+                        Text(isProcessing ? "Adding..." : "Add Session")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Colors.nasmBlue)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .padding(.horizontal)
-                .disabled(Text.isEmpty || isProcessing)
+                .disabled(text.isEmpty || isProcessing)
             }
             .background(Colors.background)
             .navigationTitle("New Session")
@@ -51,6 +64,11 @@ struct AddSessionView: View {
                     }
                 }
             }
+            .alert("Error", isPresented: $showingError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(error ?? "An unknown error occurred")
+            }
             .interactiveDismissDisabled(isProcessing)
         }
     }
@@ -60,42 +78,53 @@ struct AddSessionView: View {
         
         await MainActor.run {
             isProcessing = true
+            error = nil
         }
         
-        // Parse on background thread
-        let sessions = await Task.detached(priority: .userInitiated) { 
-            await parseText(Text)
-        }.value
-        
-        guard !sessions.isEmpty else {
+        do {
+            // Parse on background thread
+            let sessions = await Task.detached(priority: .userInitiated) { 
+                await parseText(text)
+            }.value
+            
+            guard !sessions.isEmpty else {
+                throw SessionError.noSessionsParsed
+            }
+            
+            // Save sessions to backend
+            try await DataManager.shared.saveClientSessions(clientId: client.id, sessions: sessions)
+            
+            // Update UI on success
             await MainActor.run {
                 isProcessing = false
-                dismiss()
-            }
-            return
-        }
-        
-        // Switch to main thread for UI updates
-        await MainActor.run {
-            // Update client's sessions
-            var updatedClient = client
-            updatedClient.sessions.append(contentsOf: sessions)
-            
-            // Save to DataManager
-            var clients = DataManager.shared.getClients()
-            if let index = clients.firstIndex(where: { $0.id == client.id }) {
-                clients[index] = updatedClient
-                DataManager.shared.saveClients(clients)
-                
-                // Post notification before dismissing
                 NotificationCenter.default.post(
                     name: NSNotification.Name("RefreshClientData"),
-                    object: nil
+                    object: nil,
+                    userInfo: ["clientId": client.id]
                 )
+                dismiss()
             }
-            
-            isProcessing = false
-            dismiss()
+        } catch {
+            await MainActor.run {
+                isProcessing = false
+                self.error = handleError(error)
+                showingError = true
+            }
+        }
+    }
+    
+    private func handleError(_ error: Error) -> String {
+        switch error {
+        case SessionError.noSessionsParsed:
+            return "No valid sessions could be parsed from the input"
+        case APIError.unauthorized:
+            return "Your session has expired. Please log in again"
+        case APIError.serverError(let message):
+            return "Server error: \(message)"
+        case APIError.networkError:
+            return "Network error. Please check your connection"
+        default:
+            return "An unexpected error occurred: \(error.localizedDescription)"
         }
     }
     
@@ -426,5 +455,26 @@ extension WorkoutProgramParser.ProgramType {
 extension String {
     func trim() -> String {
         return self.trimmingCharacters(in: .whitespaces)
+    }
+}
+
+// Add this at the top of the file with your other imports
+enum SessionError: Error {
+    case noSessionsParsed
+    case invalidFormat
+    case serverError(String)
+}
+
+struct ErrorBanner: View {
+    let message: String
+    
+    var body: some View {
+        Text(message)
+            .foregroundColor(.white)
+            .padding()
+            .frame(maxWidth: .infinity)
+            .background(Color.red.opacity(0.8))
+            .cornerRadius(8)
+            .padding(.horizontal)
     }
 }

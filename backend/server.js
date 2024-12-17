@@ -3,6 +3,13 @@ import dotenv from "dotenv";
 import cors from "cors";
 import connectDB from "./config/db.js";
 import authRoutes from "./routes/auth.js";
+import clientRoutes from './routes/clients.js';
+import sessionRoutes from './routes/sessions.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load environment variables
 dotenv.config();
@@ -22,6 +29,17 @@ app.get("/", (req, res) => {
 });
 // Routes
 app.use("/api/auth", authRoutes);
+app.use('/api/clients', clientRoutes);
+app.use('/api/sessions', sessionRoutes);
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
+
+// Create uploads directory if it doesn't exist
+import fs from 'fs/promises';
+try {
+    await fs.mkdir(path.join(__dirname, 'public/uploads/trainers'), { recursive: true });
+} catch (error) {
+    console.error('Error creating uploads directory:', error);
+}
 
 // Serverless compatibility
 if (process.env.NODE_ENV !== "production") {
