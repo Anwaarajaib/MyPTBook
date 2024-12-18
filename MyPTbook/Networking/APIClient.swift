@@ -13,7 +13,7 @@ enum APIError: Error {
 class APIClient {
     static let shared = APIClient()
     
-    private let baseURL = "http://192.168.70.102:5001/api"
+    private let baseURL = "https://my-pt-book-app-backend.vercel.app/api"
     
     private var authToken: String? {
         get {
@@ -117,18 +117,68 @@ class APIClient {
         
         var request = configuredURLRequest(url: url)
         request.httpMethod = "GET"
+        
+        // Log the auth token being used
+        print("Using auth token:", authToken ?? "No token")
         request.setValue("Bearer \(authToken ?? "")", forHTTPHeaderField: "Authorization")
         
+        print("Fetching clients from:", url.absoluteString)
         let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.serverError("Invalid response")
         }
         
+        print("Client response status:", httpResponse.statusCode)
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("Client response data:", responseString)
+        }
+        
         switch httpResponse.statusCode {
         case 200:
-            let clients = try JSONDecoder().decode([Client].self, from: data)
-            return clients
+            let decoder = JSONDecoder()
+            
+            // Create custom date decoder that handles multiple formats
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+            
+            decoder.dateDecodingStrategy = .custom { decoder in
+                let container = try decoder.singleValueContainer()
+                let dateString = try container.decode(String.self)
+                
+                // Try ISO8601 first
+                if let date = ISO8601DateFormatter().date(from: dateString) {
+                    return date
+                }
+                
+                // Try timestamp
+                if let timestamp = Double(dateString) {
+                    return Date(timeIntervalSince1970: timestamp)
+                }
+                
+                // Try custom format
+                if let date = dateFormatter.date(from: dateString) {
+                    return date
+                }
+                
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date string \(dateString)")
+            }
+            
+            do {
+                let clients = try decoder.decode([Client].self, from: data)
+                print("Successfully decoded \(clients.count) clients")
+                clients.forEach { client in
+                    print("Client: \(client.id) - \(client.name)")
+                }
+                return clients
+            } catch {
+                print("Decoding error:", error)
+                print("Decoding error details:", (error as? DecodingError).map { "\($0)" } ?? "Unknown error")
+                if let dataString = String(data: data, encoding: .utf8) {
+                    print("Raw data:", dataString)
+                }
+                throw error
+            }
         case 401:
             throw APIError.unauthorized
         default:
@@ -179,7 +229,7 @@ class APIClient {
                 throw APIError.serverError("Invalid request")
             default:
                 throw APIError.serverError("Server error: \(httpResponse.statusCode)")
-            }
+        }
         } catch let error as URLError {
             print("URLError: \(error.localizedDescription)")
             print("Error code: \(error.code)")
@@ -224,7 +274,7 @@ class APIClient {
                 throw APIError.serverError("Server error: \(httpResponse.statusCode)")
             default:
                 throw APIError.serverError("Unexpected status code: \(httpResponse.statusCode)")
-            }
+        }
         } catch let error {
             throw handleNetworkError(error)
         }
@@ -256,7 +306,7 @@ class APIClient {
                     """)
             default:
                 return .networkError(urlError)
-            }
+        }
         }
         return .serverError(error.localizedDescription)
     }
@@ -394,11 +444,37 @@ class APIClient {
         request.setValue("Bearer \(authToken ?? "")", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        let payload = ["sessions": sessions]
+        // Create encoder with custom date encoding strategy
         let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(payload)
+        encoder.dateEncodingStrategy = .iso8601
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // Transform sessions to ensure IDs are included
+        let sessionsToSend = sessions.map { session in
+            var mutableSession = session
+            if mutableSession.id == UUID() {
+                mutableSession = Session(
+                    id: UUID(), // Generate new UUID if none exists
+                    date: session.date,
+                    duration: session.duration,
+                    exercises: session.exercises,
+                    type: session.type,
+                    isCompleted: session.isCompleted,
+                    sessionNumber: session.sessionNumber
+                )
+            }
+            return mutableSession
+        }
+        
+        let payload = ["sessions": sessionsToSend]
+        let encodedData = try encoder.encode(payload)
+        
+        if let jsonString = String(data: encodedData, encoding: .utf8) {
+            print("Session payload:", jsonString)
+        }
+        
+        request.httpBody = encodedData
+        
+        let (responseData, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.serverError("Invalid response")
@@ -406,10 +482,15 @@ class APIClient {
         
         switch httpResponse.statusCode {
         case 201:
-            return try JSONDecoder().decode([Session].self, from: data)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode([Session].self, from: responseData)
         case 401:
             throw APIError.unauthorized
         default:
+            if let errorString = String(data: responseData, encoding: .utf8) {
+                print("Server error response:", errorString)
+            }
             throw APIError.serverError("Server error: \(httpResponse.statusCode)")
         }
     }

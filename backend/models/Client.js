@@ -1,6 +1,51 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 
+const sessionSchema = new mongoose.Schema({
+    _id: {
+        type: String,
+        required: true
+    },
+    date: {
+        type: Date,
+        required: true,
+        default: Date.now,
+        get: (date) => date.toISOString(),
+        set: (date) => new Date(date)
+    },
+    duration: {
+        type: Number,
+        required: true,
+        default: 0
+    },
+    exercises: [{
+        id: String,
+        name: String,
+        sets: Number,
+        reps: String,
+        weight: String,
+        isPartOfCircuit: Boolean,
+        circuitName: String,
+        setPerformances: [String]
+    }],
+    type: {
+        type: String,
+        required: false
+    },
+    isCompleted: {
+        type: Boolean,
+        default: false
+    },
+    sessionNumber: {
+        type: Number,
+        required: true
+    }
+}, {
+    timestamps: true,
+    _id: false,
+    toJSON: { getters: true }
+});
+
 const clientSchema = new mongoose.Schema({
     _id: {
         type: String,
@@ -35,10 +80,7 @@ const clientSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
-    sessions: [{
-        type: String,
-        ref: 'Session'
-    }],
+    sessions: [sessionSchema],
     trainer: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
@@ -57,6 +99,14 @@ clientSchema.pre('save', function(next) {
     if (!this._id) {
         this._id = uuidv4();
     }
+    
+    this.sessions.forEach(session => {
+        if (!session._id) {
+            console.warn('Session missing _id:', session);
+            session._id = uuidv4();
+        }
+    });
+    
     next();
 });
 

@@ -4,7 +4,6 @@ import cors from "cors";
 import connectDB from "./config/db.js";
 import authRoutes from "./routes/auth.js";
 import clientRoutes from './routes/clients.js';
-import sessionRoutes from './routes/sessions.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -30,7 +29,6 @@ app.get("/", (req, res) => {
 // Routes
 app.use("/api/auth", authRoutes);
 app.use('/api/clients', clientRoutes);
-app.use('/api/sessions', sessionRoutes);
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
 // Create uploads directory if it doesn't exist

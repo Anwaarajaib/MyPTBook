@@ -275,13 +275,26 @@ struct NutritionNoteView: View {
                 
                 Spacer()
                 
-                // Only show Save button when editing
+                // Show different buttons based on state
                 if isEditing {
+                    // Save button when editing
                     Button {
                         nutritionPlan = tempNutritionPlan
                         saveNutritionPlan()
                     } label: {
                         Text("Save")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(Colors.nasmBlue)
+                    }
+                } else if !tempNutritionPlan.isEmpty {
+                    // Edit button when content exists
+                    Button {
+                        withAnimation {
+                            isEditing = true
+                            isTextEditorFocused = true
+                        }
+                    } label: {
+                        Text("Edit")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(Colors.nasmBlue)
                     }
