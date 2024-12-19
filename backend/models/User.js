@@ -23,7 +23,7 @@ userSchema.pre('save', async function(next) {
     if (!this.isModified('password')) return next();
     
     try {
-        const salt = await bcrypt.genSalt(10);
+        const salt = await bcrypt.genSalt(12);
         this.password = await bcrypt.hash(this.password, salt);
         next();
     } catch (error) {
@@ -33,7 +33,17 @@ userSchema.pre('save', async function(next) {
 
 // Method to compare passwords
 userSchema.methods.comparePassword = async function(candidatePassword) {
-    return await bcrypt.compare(candidatePassword, this.password);
+    try {
+        console.log('Comparing passwords:');
+        console.log('Candidate password length:', candidatePassword.length);
+        console.log('Stored hash length:', this.password.length);
+        const isMatch = await bcrypt.compare(candidatePassword, this.password);
+        console.log('Password match result:', isMatch);
+        return isMatch;
+    } catch (error) {
+        console.error('Password comparison error:', error);
+        throw error;
+    }
 };
 
 const User = mongoose.model('User', userSchema);

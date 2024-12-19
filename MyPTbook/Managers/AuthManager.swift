@@ -16,17 +16,19 @@ class AuthManager: ObservableObject {
     }
     
     func login(email: String, password: String) async throws {
-        // Add your login logic here
-        // For now, we'll just simulate a successful login
-        try await Task.sleep(nanoseconds: 1_000_000_000) // Simulate network delay
-        isAuthenticated = true
+        let token = try await APIClient.shared.login(email: email, password: password)
+        await MainActor.run {
+            isAuthenticated = true
+            DataManager.shared.saveAuthToken(token)
+        }
     }
     
-    func register(email: String, password: String) async throws {
-        // Add registration logic here
-        // For now, we'll just simulate a successful registration
-        try await Task.sleep(nanoseconds: 1_000_000_000) // Simulate network delay
-        isAuthenticated = true
+    func register(email: String, password: String, name: String = "") async throws {
+        let token = try await APIClient.shared.register(email: email, password: password, name: name)
+        await MainActor.run {
+            isAuthenticated = true
+            DataManager.shared.saveAuthToken(token)
+        }
     }
     
     func logout() {
