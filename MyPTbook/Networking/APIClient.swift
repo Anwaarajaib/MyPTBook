@@ -12,6 +12,7 @@ enum APIError: Error {
 
 class APIClient {
     static let shared = APIClient()
+    //private let baseURL = "http://localhost:5001/api"
     
     private let baseURL = "https://my-pt-book-app-backend.vercel.app/api"
     
