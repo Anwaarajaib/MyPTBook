@@ -1,37 +1,39 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 
+// Define the exercise schema
+const exerciseSchema = new mongoose.Schema({
+    id: {
+        type: String,
+        required: true
+    },
+    name: String,
+    sets: Number,
+    reps: String,
+    weight: String,
+    isPartOfCircuit: Boolean,
+    circuitName: String,
+    setPerformances: [String]
+}, { _id: false });
+
+// Define the session schema
 const sessionSchema = new mongoose.Schema({
     _id: {
         type: String,
-        required: true
+        required: true,
+        default: uuidv4
     },
     date: {
         type: Date,
         required: true,
-        default: Date.now,
-        get: (date) => date.toISOString(),
-        set: (date) => new Date(date)
+        default: Date.now
     },
     duration: {
         type: Number,
-        required: true,
         default: 0
     },
-    exercises: [{
-        id: String,
-        name: String,
-        sets: Number,
-        reps: String,
-        weight: String,
-        isPartOfCircuit: Boolean,
-        circuitName: String,
-        setPerformances: [String]
-    }],
-    type: {
-        type: String,
-        required: false
-    },
+    exercises: [exerciseSchema],
+    type: String,
     isCompleted: {
         type: Boolean,
         default: false
@@ -40,84 +42,64 @@ const sessionSchema = new mongoose.Schema({
         type: Number,
         required: true
     }
-}, {
-    timestamps: true,
-    _id: false,
-    toJSON: { getters: true }
-});
+}, { _id: false });
 
+// Define the client schema
 const clientSchema = new mongoose.Schema({
     _id: {
         type: String,
-        default: uuidv4,
-        required: true
+        required: true,
+        default: uuidv4
     },
     name: {
         type: String,
         required: true
     },
-    age: {
-        type: Number,
-        required: true
-    },
-    height: {
-        type: Number,
-        required: true
-    },
-    weight: {
-        type: Number,
-        required: true
-    },
-    medicalHistory: {
-        type: String,
-        default: ''
-    },
-    goals: {
-        type: String,
-        default: ''
-    },
-    nutritionPlan: {
-        type: String,
-        default: ''
-    },
+    age: Number,
+    height: Number,
+    weight: Number,
+    medicalHistory: String,
+    goals: String,
+    goalsNotes: String,
+    nutritionPlan: String,
+    notes: String,
     sessions: [sessionSchema],
     trainer: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true
     },
-    profileImagePath: {
-        type: String,
-        default: null
-    }
+    profileImagePath: String
 }, {
-    _id: false,
     timestamps: true
 });
 
+// Pre-save middleware to ensure IDs
 clientSchema.pre('save', function(next) {
+    // Ensure client has an ID
     if (!this._id) {
         this._id = uuidv4();
     }
     
-    this.sessions.forEach(session => {
-        if (!session._id) {
-            console.warn('Session missing _id:', session);
-            session._id = uuidv4();
-        }
-    });
+    // Ensure each session has an ID
+    if (this.sessions) {
+        this.sessions.forEach(session => {
+            if (!session._id) {
+                session._id = uuidv4();
+            }
+            
+            // Ensure each exercise has an ID
+            if (session.exercises) {
+                session.exercises.forEach(exercise => {
+                    if (!exercise.id) {
+                        exercise.id = uuidv4();
+                    }
+                });
+            }
+        });
+    }
     
     next();
-});
-
-clientSchema.set('toJSON', {
-    transform: function(doc, ret) {
-        ret._id = ret._id.toString();
-        if (!ret.sessions) {
-            ret.sessions = [];
-        }
-        return ret;
-    }
 });
 
 const Client = mongoose.model('Client', clientSchema);

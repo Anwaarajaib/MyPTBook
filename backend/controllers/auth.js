@@ -4,21 +4,23 @@ import User from '../models/User.js';
 
 export const login = async (req, res) => {
     try {
-        console.log('Login request received:', req.body);
+        console.log('Login attempt for email:', req.body.email);
         const { email, password } = req.body;
         
         // Find user by email
         const user = await User.findOne({ email: email.toLowerCase() });
-        console.log('User found:', user ? 'yes' : 'no');
+        console.log('User found:', user ? 'Yes' : 'No');
         
         if (!user) {
             console.log('No user found with email:', email);
             return res.status(401).json({ message: "Invalid email or password" });
         }
         
-        // Verify password
-        const isValidPassword = await bcrypt.compare(password, user.password);
-        console.log('Password valid:', isValidPassword);
+        // Debug password comparison
+        console.log('Stored hashed password:', user.password);
+        console.log('Attempting to compare with provided password');
+        const isValidPassword = await user.comparePassword(password);
+        console.log('Password comparison result:', isValidPassword);
         
         if (!isValidPassword) {
             console.log('Invalid password for user:', email);
@@ -32,7 +34,7 @@ export const login = async (req, res) => {
             { expiresIn: '7d' }
         );
         
-        console.log('Login successful for user:', email);
+        console.log('Login successful for user:', user._id);
         res.json({
             token,
             user: {
@@ -49,25 +51,27 @@ export const login = async (req, res) => {
 
 export const register = async (req, res) => {
     try {
+        console.log('Registration attempt for email:', req.body.email);
         const { name, email, password } = req.body;
         
         // Check if user already exists
         const existingUser = await User.findOne({ email: email.toLowerCase() });
         if (existingUser) {
+            console.log('User already exists:', email);
             return res.status(400).json({ message: "Email already registered" });
         }
-        
-        // Hash password
-        const hashedPassword = await bcrypt.hash(password, 12);
         
         // Create new user
         const user = new User({
             name,
             email: email.toLowerCase(),
-            password: hashedPassword
+            password
         });
         
+        // Log before saving
+        console.log('About to save user with password length:', password.length);
         await user.save();
+        console.log('User saved with hashed password length:', user.password.length);
         
         // Generate JWT token
         const token = jwt.sign(
@@ -76,6 +80,7 @@ export const register = async (req, res) => {
             { expiresIn: '7d' }
         );
         
+        console.log('Registration successful for:', email);
         res.status(201).json({
             token,
             user: {
@@ -85,6 +90,7 @@ export const register = async (req, res) => {
             }
         });
     } catch (error) {
+        console.error('Registration error:', error);
         res.status(400).json({ message: error.message });
     }
 };

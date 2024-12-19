@@ -12,6 +12,7 @@ struct Client: Identifiable, Codable {
     var sessions: [Session]
     var nutritionPlan: String
     private var _profileImage: UIImage?
+    var trainer: Trainer?
     
     var profileImage: UIImage? {
         get {
@@ -24,9 +25,10 @@ struct Client: Identifiable, Codable {
     }
     
     private enum CodingKeys: String, CodingKey {
-        case id = "_id"
+        case id
         case name, age, height, weight, 
              medicalHistory, goals, sessions, nutritionPlan
+        case trainer = "trainer"
     }
     
     init(from decoder: Decoder) throws {
@@ -45,7 +47,16 @@ struct Client: Identifiable, Codable {
         medicalHistory = try container.decode(String.self, forKey: .medicalHistory)
         goals = try container.decode(String.self, forKey: .goals)
         sessions = try container.decodeIfPresent([Session].self, forKey: .sessions) ?? []
-        nutritionPlan = try container.decode(String.self, forKey: .nutritionPlan)
+        nutritionPlan = try container.decodeIfPresent(String.self, forKey: .nutritionPlan) ?? ""
+        
+        if let trainerString = try? container.decode(String.self, forKey: .trainer) {
+            self.trainer = Trainer(id: trainerString, name: "")
+        } else if let trainerObject = try? container.decode(Trainer.self, forKey: .trainer) {
+            self.trainer = trainerObject
+        } else {
+            self.trainer = nil
+        }
+        
         _profileImage = nil
     }
     
@@ -82,6 +93,9 @@ struct Client: Identifiable, Codable {
         try container.encode(goals, forKey: .goals)
         try container.encode(sessions, forKey: .sessions)
         try container.encode(nutritionPlan, forKey: .nutritionPlan)
+        if let trainer = trainer {
+            try container.encode(trainer.id, forKey: .trainer)
+        }
     }
 }
 
@@ -111,7 +125,7 @@ struct Session: Codable, Identifiable {
     }
     
     private enum CodingKeys: String, CodingKey {
-        case id = "_id"
+        case id
         case date, duration, exercises, type, isCompleted, sessionNumber
     }
     
@@ -145,7 +159,7 @@ struct Session: Codable, Identifiable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id.uuidString, forKey: .id)
-        try container.encode(date, forKey: .date)
+        try container.encode(date.ISO8601Format(), forKey: .date)
         try container.encode(duration, forKey: .duration)
         try container.encode(exercises, forKey: .exercises)
         try container.encode(type, forKey: .type)
@@ -220,5 +234,15 @@ extension Session {
         } else {
             return "\(minutes)m"
         }
+    }
+}
+
+struct Trainer: Codable {
+    let id: String
+    let name: String
+    
+    private enum CodingKeys: String, CodingKey {
+        case id = "_id"
+        case name
     }
 } 

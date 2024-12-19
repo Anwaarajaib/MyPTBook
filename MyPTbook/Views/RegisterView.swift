@@ -7,6 +7,7 @@ struct RegisterView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
+    @State private var name = ""
     @State private var showingAlert = false
     @State private var alertMessage = ""
     
@@ -17,6 +18,10 @@ struct RegisterView: View {
                 .foregroundColor(Colors.nasmBlue)
             
             VStack(spacing: 16) {
+                TextField("Name", text: $name)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .textContentType(.name)
+                
                 TextField("Email", text: $email)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .textContentType(.emailAddress)
@@ -53,6 +58,7 @@ struct RegisterView: View {
     }
     
     private var isValidForm: Bool {
+        !name.isEmpty &&
         !email.isEmpty && 
         !password.isEmpty && 
         password == confirmPassword &&
@@ -62,10 +68,19 @@ struct RegisterView: View {
     private func register() {
         Task {
             do {
-                try await authManager.register(email: email, password: password)
+                try await authManager.register(email: email, password: password, name: name)
+                // Registration successful, dismiss the view
+                dismiss()
             } catch {
                 await MainActor.run {
-                    alertMessage = error.localizedDescription
+                    switch error {
+                    case APIError.validationError(let errors):
+                        alertMessage = errors.joined(separator: "\n")
+                    case APIError.serverError(let message):
+                        alertMessage = message
+                    default:
+                        alertMessage = error.localizedDescription
+                    }
                     showingAlert = true
                 }
             }

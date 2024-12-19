@@ -8,6 +8,7 @@ enum APIError: Error {
     case serverError(String)
     case validationError([String])
     case networkError(Error)
+    case invalidResponse
 }
 
 class APIClient {
@@ -116,69 +117,53 @@ class APIClient {
             throw APIError.invalidURL
         }
         
+        guard let token = authToken else {
+            throw APIError.unauthorized
+        }
+        
         var request = configuredURLRequest(url: url)
         request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
-        // Log the auth token being used
-        print("Using auth token:", authToken ?? "No token")
-        request.setValue("Bearer \(authToken ?? "")", forHTTPHeaderField: "Authorization")
+        print("Fetching clients for user with token:", token)
         
-        print("Fetching clients from:", url.absoluteString)
         let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.serverError("Invalid response")
         }
         
-        print("Client response status:", httpResponse.statusCode)
+        print("Client fetch response status:", httpResponse.statusCode)
         if let responseString = String(data: data, encoding: .utf8) {
-            print("Client response data:", responseString)
+            print("Client fetch response:", responseString)
         }
         
         switch httpResponse.statusCode {
         case 200:
             let decoder = JSONDecoder()
-            
-            // Create custom date decoder that handles multiple formats
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
-            
-            decoder.dateDecodingStrategy = .custom { decoder in
-                let container = try decoder.singleValueContainer()
-                let dateString = try container.decode(String.self)
-                
-                // Try ISO8601 first
-                if let date = ISO8601DateFormatter().date(from: dateString) {
-                    return date
-                }
-                
-                // Try timestamp
-                if let timestamp = Double(dateString) {
-                    return Date(timeIntervalSince1970: timestamp)
-                }
-                
-                // Try custom format
-                if let date = dateFormatter.date(from: dateString) {
-                    return date
-                }
-                
-                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date string \(dateString)")
-            }
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
             
             do {
                 let clients = try decoder.decode([Client].self, from: data)
                 print("Successfully decoded \(clients.count) clients")
-                clients.forEach { client in
-                    print("Client: \(client.id) - \(client.name)")
-                }
                 return clients
             } catch {
                 print("Decoding error:", error)
-                print("Decoding error details:", (error as? DecodingError).map { "\($0)" } ?? "Unknown error")
-                if let dataString = String(data: data, encoding: .utf8) {
-                    print("Raw data:", dataString)
+                if let decodingError = error as? DecodingError {
+                    switch decodingError {
+                    case .keyNotFound(let key, let context):
+                        print("Key not found:", key, "context:", context)
+                    case .typeMismatch(let type, let context):
+                        print("Type mismatch:", type, "context:", context)
+                    case .valueNotFound(let type, let context):
+                        print("Value not found:", type, "context:", context)
+                    case .dataCorrupted(let context):
+                        print("Data corrupted:", context)
+                    @unknown default:
+                        print("Unknown decoding error:", error)
+                    }
                 }
-                throw error
+                throw APIError.decodingError
             }
         case 401:
             throw APIError.unauthorized
@@ -202,6 +187,11 @@ class APIClient {
         
         let loginData = ["email": email.lowercased(), "password": password]
         request.httpBody = try JSONEncoder().encode(loginData)
+        
+        // Print the request body for debugging
+        if let requestBody = String(data: request.httpBody!, encoding: .utf8) {
+            print("Login request body:", requestBody)
+        }
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -247,37 +237,49 @@ class APIClient {
             throw APIError.invalidURL
         }
         
+        print("Attempting registration with email:", email)
+        print("Attempting to connect to:", url.absoluteString)
+        
         var request = configuredURLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        let body = ["email": email, "password": password, "name": name]
+        let body = [
+            "name": name,
+            "email": email.lowercased(),
+            "password": password
+        ]
+        
         request.httpBody = try JSONEncoder().encode(body)
         
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw APIError.serverError("Invalid response")
-            }
-            
-            switch httpResponse.statusCode {
-            case 200, 201:
-                let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
-                self.authToken = tokenResponse.token
-                return tokenResponse.token
-            case 400:
-                if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
-                    throw APIError.validationError(errorResponse.errors)
-                }
-                throw APIError.serverError("Invalid request")
-            case 500...599:
-                throw APIError.serverError("Server error: \(httpResponse.statusCode)")
-            default:
-                throw APIError.serverError("Unexpected status code: \(httpResponse.statusCode)")
+        print("Making registration request to:", url.absoluteString)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
         }
-        } catch let error {
-            throw handleNetworkError(error)
+        
+        print("Registration response status code:", httpResponse.statusCode)
+        
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("Registration response data:", responseString)
+        }
+        
+        switch httpResponse.statusCode {
+        case 200, 201:
+            let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+            self.authToken = authResponse.token  // Save the token immediately
+            return authResponse.token
+        case 400:
+            if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
+                throw APIError.validationError(errorResponse.errors)
+            }
+            throw APIError.serverError("Registration failed")
+        case 401:
+            throw APIError.unauthorized
+        default:
+            throw APIError.serverError("Server error: \(httpResponse.statusCode)")
         }
     }
     
@@ -445,40 +447,53 @@ class APIClient {
         request.setValue("Bearer \(authToken ?? "")", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        // Create encoder with custom date encoding strategy
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        
-        // Transform sessions to ensure IDs are included
-        let sessionsToSend = sessions.map { session in
-            var mutableSession = session
-            if mutableSession.id == UUID() {
-                mutableSession = Session(
-                    id: UUID(), // Generate new UUID if none exists
-                    date: session.date,
-                    duration: session.duration,
-                    exercises: session.exercises,
-                    type: session.type,
-                    isCompleted: session.isCompleted,
-                    sessionNumber: session.sessionNumber
-                )
-            }
-            return mutableSession
+        // Create the sessions payload with explicit _id field and properly formatted exercises
+        let sessionsData = sessions.map { session in
+            [
+                "_id": session.id.uuidString,
+                "date": ISO8601DateFormatter().string(from: session.date),
+                "duration": session.duration,
+                "exercises": session.exercises.map { exercise in
+                    [
+                        "id": exercise.id.uuidString,
+                        "name": exercise.name,
+                        "sets": exercise.sets,
+                        "reps": exercise.reps,
+                        "weight": exercise.weight,
+                        "isPartOfCircuit": exercise.isPartOfCircuit,
+                        "circuitName": exercise.circuitName ?? "",
+                        "setPerformances": exercise.setPerformances
+                    ]
+                },
+                "type": session.type ?? "",
+                "isCompleted": session.isCompleted,
+                "sessionNumber": session.sessionNumber
+            ]
         }
         
-        let payload = ["sessions": sessionsToSend]
-        let encodedData = try encoder.encode(payload)
+        let payload = ["sessions": sessionsData]
         
-        if let jsonString = String(data: encodedData, encoding: .utf8) {
-            print("Session payload:", jsonString)
+        // Log the payload before encoding
+        print("Preparing to send sessions:", sessionsData.map { ["_id": $0["_id"] ?? ""] })
+        
+        let jsonData = try JSONSerialization.data(withJSONObject: payload, options: [])
+        
+        // Log the encoded JSON for debugging
+        if let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("Sending payload:", jsonString)
         }
         
-        request.httpBody = encodedData
+        request.httpBody = jsonData
         
         let (responseData, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.serverError("Invalid response")
+        }
+        
+        // Log the response
+        if let responseString = String(data: responseData, encoding: .utf8) {
+            print("Server response:", responseString)
         }
         
         switch httpResponse.statusCode {
@@ -598,4 +613,9 @@ struct UserResponse: Codable {
     let id: String
     let name: String
     let email: String
+}
+
+struct AuthResponse: Codable {
+    let token: String
+    let user: UserResponse
 }
