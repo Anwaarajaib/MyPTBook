@@ -1,7 +1,7 @@
 import Client from '../models/Client.js';
 
 export const createClient = async (req, res) => {
-    const { name, age, height, weight, goals, medicalHistory, userId } = req.body;
+    const { name, age, height, weight, goals, medicalHistory, userId, clientImage } = req.body;
     try {
         const client = new Client({ name, clientImage, age, height, weight, goals, medicalHistory, user: userId });
         await client.save();
@@ -13,7 +13,9 @@ export const createClient = async (req, res) => {
 
 export const getAllClients = async (req, res) => {
     try {
+        console.log(req.user)
         const clients = await Client.find({ user: req.user._id });
+        console.log(clients)
         res.json(clients);
     } catch (error) {
         console.error('Error fetching clients:', error);

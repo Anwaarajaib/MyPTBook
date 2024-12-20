@@ -6,7 +6,7 @@ import userRoutes from "./routes/userRoutes.js";
 import clientRoutes from './routes/clientRoutes.js';
 import sessionRoutes from './routes/sessionRoutes.js'
 import exerciseRoute from './routes/exerciseRoutes.js'
-
+import nutritionRoutes from './routes/nutritionRoutes.js'
 
 
 dotenv.config();
@@ -25,7 +25,23 @@ app.use("/api/user", userRoutes);
 app.use('/api/client', clientRoutes);
 app.use('/api/session', sessionRoutes)
 app.use('/api/exercise', exerciseRoute)
+app.use('/api/nutrition', nutritionRoutes)
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err.message);
+  res.status(500).json({ message: 'Internal Server Error' });
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error.message);
+});
 // Serverless compatibility
 if (process.env.NODE_ENV !== "production") {
   const PORT = process.env.PORT || 5001;
