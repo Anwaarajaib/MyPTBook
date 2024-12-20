@@ -1,47 +1,13 @@
 import mongoose from 'mongoose';
-import { v4 as uuidv4 } from 'uuid';
 
-const sessionSchema = new mongoose.Schema({
-    _id: {
-        type: String,
-        required: true,
-        default: uuidv4
-    },
-    date: {
-        type: Date,
-        required: true,
-        default: Date.now
-    },
-    duration: {
-        type: Number,
-        required: true,
-        default: 0
-    },
-    exercises: [{
-        id: {
-            type: String,
-            required: true
-        },
-        name: String,
-        sets: Number,
-        reps: String,
-        weight: String,
-        isPartOfCircuit: Boolean,
-        circuitName: String,
-        setPerformances: [String]
-    }],
-    type: String,
-    isCompleted: {
-        type: Boolean,
-        default: false
-    },
-    sessionNumber: {
-        type: Number,
-        required: true
-    }
-}, {
-    timestamps: true,
-    _id: false
+const SessionSchema = new mongoose.Schema({
+    workoutName: { type: String, required: true },
+    client: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', required: true },
+    completedDate: { type: Date },
+    exercises: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Exercise' }],
+    isCompleted: { type: Boolean, default: false },
 });
 
-export default sessionSchema; 
+const Session = mongoose.model('Session', SessionSchema);
+
+export default Session; 

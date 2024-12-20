@@ -15,13 +15,15 @@ const userSchema = new mongoose.Schema({
     password: {
         type: String,
         required: true
-    }
+    },
+    userImage: { type: String },
+    resetPasswordToken: { type: String },
+    resetPasswordExpires: { type: Date },
 }, { timestamps: true });
 
-// Password hashing middleware
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', async function (next) {
     if (!this.isModified('password')) return next();
-    
+
     try {
         const salt = await bcrypt.genSalt(12);
         this.password = await bcrypt.hash(this.password, salt);
@@ -31,14 +33,11 @@ userSchema.pre('save', async function(next) {
     }
 });
 
-// Method to compare passwords
-userSchema.methods.comparePassword = async function(candidatePassword) {
+userSchema.methods.comparePassword = async function (candidatePassword) {
     try {
-        console.log('Comparing passwords:');
-        console.log('Candidate password length:', candidatePassword.length);
-        console.log('Stored hash length:', this.password.length);
+
         const isMatch = await bcrypt.compare(candidatePassword, this.password);
-        console.log('Password match result:', isMatch);
+
         return isMatch;
     } catch (error) {
         console.error('Password comparison error:', error);
