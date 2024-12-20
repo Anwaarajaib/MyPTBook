@@ -13,9 +13,9 @@ enum APIError: Error {
 
 class APIClient {
     static let shared = APIClient()
-    //private let baseURL = "http://localhost:5001/api"
+    private let baseURL = "http://localhost:5001/api"
     
-    private let baseURL = "https://my-pt-book-app-backend.vercel.app/api"
+    //private let baseURL = "https://my-pt-book-app-backend.vercel.app/api"
     
     private var authToken: String? {
         get {
@@ -113,7 +113,7 @@ class APIClient {
     
     // Update fetchClients to handle server-side data
     func fetchClients() async throws -> [Client] {
-        guard let url = URL(string: "\(baseURL)/clients") else {
+        guard let url = URL(string: "\(baseURL)/client") else {
             throw APIError.invalidURL
         }
         
@@ -174,8 +174,8 @@ class APIClient {
     
     // Login method
     func login(email: String, password: String) async throws -> String {
-        guard let url = URL(string: "\(baseURL)/auth/login") else {
-            print("Invalid URL: \(baseURL)/auth/login")
+        guard let url = URL(string: "\(baseURL)/user/login") else {
+            print("Invalid URL: \(baseURL)/user/login")
             throw APIError.invalidURL
         }
         
@@ -233,7 +233,7 @@ class APIClient {
     
     // Register method with improved error handling
     func register(email: String, password: String, name: String) async throws -> String {
-        guard let url = URL(string: "\(baseURL)/auth/register") else {
+        guard let url = URL(string: "\(baseURL)/user/register") else {
             throw APIError.invalidURL
         }
         
@@ -316,7 +316,7 @@ class APIClient {
     
     // MARK: - Client Methods
     func createClient(_ client: Client) async throws -> Client {
-        guard let url = URL(string: "\(baseURL)/clients") else {
+        guard let url = URL(string: "\(baseURL)/client") else {
             throw APIError.invalidURL
         }
         
@@ -349,7 +349,7 @@ class APIClient {
     }
     
     func updateClient(_ client: Client) async throws -> Client {
-        guard let url = URL(string: "\(baseURL)/clients/\(client.id)") else {
+        guard let url = URL(string: "\(baseURL)/client/\(client.id)") else {
             throw APIError.invalidURL
         }
         
@@ -378,7 +378,7 @@ class APIClient {
     }
     
     func deleteClient(id: UUID) async throws {
-        guard let url = URL(string: "\(baseURL)/clients/\(id.uuidString)") else {
+        guard let url = URL(string: "\(baseURL)/client/\(id.uuidString)") else {
             throw APIError.invalidURL
         }
         
@@ -413,7 +413,7 @@ class APIClient {
     
     // MARK: - Session Methods
     func fetchClientSessions(clientId: UUID) async throws -> [Session] {
-        guard let url = URL(string: "\(baseURL)/clients/\(clientId)/sessions") else {
+        guard let url = URL(string: "\(baseURL)/session/client\(clientId)") else {
             throw APIError.invalidURL
         }
         
@@ -438,7 +438,7 @@ class APIClient {
     }
     
     func createSessions(clientId: UUID, sessions: [Session]) async throws -> [Session] {
-        guard let url = URL(string: "\(baseURL)/clients/\(clientId)/sessions") else {
+        guard let url = URL(string: "\(baseURL)/session") else {
             throw APIError.invalidURL
         }
         
@@ -512,7 +512,7 @@ class APIClient {
     }
     
     func updateSession(clientId: UUID, session: Session) async throws -> Session {
-        guard let url = URL(string: "\(baseURL)/clients/\(clientId)/sessions/\(session.id)") else {
+        guard let url = URL(string: "\(baseURL)/session/\(session.id)") else {
             throw APIError.invalidURL
         }
         
@@ -541,7 +541,7 @@ class APIClient {
     }
     
     func deleteSession(clientId: UUID, sessionId: UUID) async throws {
-        guard let url = URL(string: "\(baseURL)/clients/\(clientId)/sessions/\(sessionId)") else {
+        guard let url = URL(string: "\(baseURL)/session/\(sessionId)") else {
             throw APIError.invalidURL
         }
         
