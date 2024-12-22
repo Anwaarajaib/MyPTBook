@@ -15,7 +15,18 @@ connectDB();
 
 const app = express();
 
-app.use(cors());
+// Add more detailed logging
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+    next();
+});
+
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+}));
 app.use(express.json());
 app.get("/", (req, res) => {
   res.send("Backend running");
@@ -27,10 +38,10 @@ app.use('/api/session', sessionRoutes)
 app.use('/api/exercise', exerciseRoute)
 app.use('/api/nutrition', nutritionRoutes)
 
-// Error handling middleware
+// Add error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err.message);
-  res.status(500).json({ message: 'Internal Server Error' });
+    console.error('Error:', err);
+    res.status(500).json({ message: err.message });
 });
 
 // Handle unhandled promise rejections
@@ -46,7 +57,8 @@ process.on('uncaughtException', (error) => {
 if (process.env.NODE_ENV !== "production") {
   const PORT = process.env.PORT || 5001;
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running locally on port ${PORT}`);
+    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Try accessing: http://localhost:${PORT}/api/user/login`);
   });
 }
 

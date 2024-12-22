@@ -6,27 +6,39 @@ import bcrypt from 'bcryptjs'
 
 export const login = async (req, res) => {
     try {
+        console.log('Processing login request');
         const { email, password } = req.body;
+        console.log('Login attempt for email:', email);
+        
         const user = await User.findOne({ email: email.toLowerCase() });
         if (!user) {
+            console.log('User not found');
             return res.status(401).json({ message: "Invalid email or password" });
         }
+
         const isValidPassword = await user.comparePassword(password);
+        console.log('Password validation result:', isValidPassword);
+        
         if (!isValidPassword) {
+            console.log('Invalid password');
             return res.status(401).json({ message: "Invalid email or password" });
         }
+
         const token = jwt.sign(
             { userId: user._id },
             process.env.JWT_SECRET,
             { expiresIn: '7d' }
         );
+        
+        console.log('Login successful for user:', user._id);
+        
         res.json({
+            token,
             user: {
-                id: user._id,
+                id: user._id.toString(),
                 name: user.name,
                 email: user.email
-            },
-            token
+            }
         });
     } catch (error) {
         console.error('Login error:', error);

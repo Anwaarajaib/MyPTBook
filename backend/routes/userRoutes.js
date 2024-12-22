@@ -4,7 +4,10 @@ import Protect from '../middleware/auth.js';
 
 const router = express.Router();
 
-router.post('/login', login);
+router.post('/login', (req, res, next) => {
+    console.log('Received login request:', req.body);
+    login(req, res).catch(next);
+});
 router.post('/register', register);
 router.route('/profile').get(Protect, getProfile).put(Protect, updateProfile);
 router.post('/forgot-password', forgotPassword);
