@@ -2,7 +2,7 @@ import SwiftUI
 
 struct RegisterView: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject var authManager: AuthManager
+    @StateObject private var authManager = AuthManager.shared
     
     @State private var email = ""
     @State private var password = ""
@@ -68,7 +68,7 @@ struct RegisterView: View {
     private func register() {
         Task {
             do {
-                try await authManager.register(email: email, password: password, name: name)
+                try await authManager.register( name: name,email: email, password: password)
                 // Registration successful, dismiss the view
                 dismiss()
             } catch {

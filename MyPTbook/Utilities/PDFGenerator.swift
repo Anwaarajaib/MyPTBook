@@ -318,20 +318,15 @@ class PDFGenerator {
             yPosition += 120
             
             // Draw sessions
-            for session in sessions.sorted(by: { $0.sessionNumber < $1.sessionNumber }) {
-                // Calculate height needed for this session
-                var sessionHeight: CGFloat = 90  // Basic session header height
-                if session.type != nil { sessionHeight += 30 }
-                
-                // Add height for exercises and circuit headers
-                var currentCircuit: String?
-                for exercise in session.exercises {
-                    if exercise.isPartOfCircuit && exercise.circuitName != currentCircuit {
-                        sessionHeight += 40  // Circuit header height
-                        currentCircuit = exercise.circuitName
-                    }
-                    sessionHeight += 30  // Exercise row height
+            for session in sessions.sorted(by: { 
+                // Sort by completedDate if available, otherwise keep original order
+                if let date1 = $0.completedDate, let date2 = $1.completedDate {
+                    return date1 < date2
                 }
+                return false
+            }) {
+                // Calculate height needed for this session
+                let sessionHeight: CGFloat = 90  // Basic session header height + exercises list
                 
                 // Check if we need a new page
                 if yPosition + sessionHeight > pageHeight - margin {
@@ -341,138 +336,39 @@ class PDFGenerator {
                 
                 // Draw session card
                 let cardPath = UIBezierPath(roundedRect: CGRect(x: margin, y: yPosition, 
-                                                              width: contentWidth, height: 40),
+                                                              width: contentWidth, height: sessionHeight),
                                           cornerRadius: 8)
                 nasmBlue.withAlphaComponent(0.1).setFill()
                 cardPath.fill()
                 
-                // Draw session header
-                let sessionTitle = "Session \(session.sessionNumber)"
-                sessionTitle.draw(at: CGPoint(x: margin + 20, y: yPosition + 10),
+                // Draw workout name
+                session.workoutName.draw(at: CGPoint(x: margin + 20, y: yPosition + 10),
+                                      withAttributes: [
+                                          .font: sectionHeaderFont,
+                                          .foregroundColor: nasmBlue
+                                      ])
+                
+                // Draw completion date if available
+                if let completedDate = session.completedDate {
+                    let dateFormatter = DateFormatter()
+                    dateFormatter.dateStyle = .medium
+                    let dateString = dateFormatter.string(from: completedDate)
+                    dateString.draw(at: CGPoint(x: margin + 20, y: yPosition + 40),
+                                   withAttributes: [
+                                       .font: bodyFont,
+                                       .foregroundColor: UIColor.gray
+                                   ])
+                }
+                
+                // Draw exercise count
+                let exerciseCount = "\(session.exercises.count) exercises"
+                exerciseCount.draw(at: CGPoint(x: margin + 20, y: yPosition + 65),
                                   withAttributes: [
-                                      .font: sectionHeaderFont,
-                                      .foregroundColor: nasmBlue
+                                      .font: bodyFont,
+                                      .foregroundColor: UIColor.darkGray
                                   ])
                 
-                yPosition += 50
-                
-                // Draw session type if available
-                if let type = session.type?.replacingOccurrences(of: "^Day\\s*\\d+\\s*:\\s*", 
-                                                               with: "", 
-                                                               options: .regularExpression) {
-                    type.draw(at: CGPoint(x: margin + 20, y: yPosition),
-                             withAttributes: [
-                                .font: subtitleFont.bold(),
-                                .foregroundColor: nasmBlue
-                             ])
-                    yPosition += 30
-                }
-                
-                // Update the column widths and spacing in the table header section
-                let tableHeaders = ["Exercise", "Sets", "Reps"]
-                let columnWidths: [CGFloat] = [
-                    contentWidth * 0.6,  // Exercise gets more space
-                    contentWidth * 0.15, // Sets slightly smaller
-                    contentWidth * 0.15  // Reps slightly smaller
-                ]
-                let xOffset = margin + 20  // Changed to let since it's not mutated
-                
-                // Draw table headers with adjusted spacing
-                for (index, header) in tableHeaders.enumerated() {
-                    let headerX = if index == 0 {
-                        xOffset  // Exercise header stays at left
-                    } else if index == 1 {
-                        pageWidth - margin - (columnWidths[2] + columnWidths[1]) - 20  // Sets header
-                    } else {
-                        pageWidth - margin - columnWidths[2] - 20  // Reps header
-                    }
-                    
-                    header.draw(at: CGPoint(x: headerX, y: yPosition),
-                              withAttributes: [
-                                .font: bodyFont.bold(),
-                                .foregroundColor: nasmBlue
-                              ])
-                }
-                
-                yPosition += 25
-                
-                // Draw separator line
-                let linePath = UIBezierPath()
-                linePath.move(to: CGPoint(x: margin + 20, y: yPosition))
-                linePath.addLine(to: CGPoint(x: pageWidth - margin - 20, y: yPosition))
-                nasmBlue.withAlphaComponent(0.2).setStroke()
-                linePath.lineWidth = 1
-                linePath.stroke()
-                
-                yPosition += 10
-                
-                // Draw exercises
-                for (index, exercise) in session.exercises.enumerated() {
-                    // Check for circuit header
-                    if exercise.isPartOfCircuit && 
-                       (index == 0 || session.exercises[index - 1].circuitName != exercise.circuitName) {
-                        
-                        if let circuitName = exercise.circuitName,
-                           !circuitName.lowercased().contains("day") {
-                            // Remove numbering and clean circuit name
-                            let cleanCircuitName = circuitName
-                                .replacingOccurrences(of: "^\\d+\\.\\s*", with: "", options: .regularExpression)
-                                .trimmingCharacters(in: .whitespaces)
-                            
-                            // Draw circuit header with blue background
-                            let headerHeight: CGFloat = 30
-                            let headerRect = CGRect(x: margin, y: yPosition, 
-                                                  width: contentWidth, height: headerHeight)
-                            nasmBlue.withAlphaComponent(0.05).setFill()
-                            UIBezierPath(roundedRect: headerRect, cornerRadius: 6).fill()
-                            
-                            // Draw circuit title
-                            cleanCircuitName.draw(
-                                at: CGPoint(x: margin + 20, y: yPosition + 6),
-                                withAttributes: [
-                                    .font: bodyFont.bold(),
-                                    .foregroundColor: nasmBlue
-                                ]
-                            )
-                            
-                            yPosition += headerHeight + 10
-                            
-                            // Check for page break after circuit header
-                            if yPosition > pageHeight - margin - 50 {
-                                context.beginPage()
-                                yPosition = margin + 50
-                            }
-                        }
-                    }
-                    
-                    // Draw exercise row with adjusted spacing
-                    // Exercise name (left-aligned)
-                    exercise.name.draw(at: CGPoint(x: margin + 20, y: yPosition),
-                                     withAttributes: [
-                                        .font: bodyFont,
-                                        .foregroundColor: UIColor.black
-                                     ])
-                    
-                    // Sets (right-aligned with padding)
-                    let setsX = pageWidth - margin - (columnWidths[2] + columnWidths[1]) - 20
-                    String(exercise.sets).draw(at: CGPoint(x: setsX, y: yPosition),
-                                             withAttributes: [
-                                                .font: bodyFont,
-                                                .foregroundColor: UIColor.black
-                                             ])
-                    
-                    // Reps (right-aligned)
-                    let repsX = pageWidth - margin - columnWidths[2] - 20
-                    exercise.reps.draw(at: CGPoint(x: repsX, y: yPosition),
-                                     withAttributes: [
-                                        .font: bodyFont,
-                                        .foregroundColor: UIColor.black
-                                     ])
-                    
-                    yPosition += 30
-                }
-                
-                yPosition += 40  // Space between sessions
+                yPosition += sessionHeight + 20  // Add spacing between sessions
             }
         }
     }

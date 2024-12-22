@@ -1,244 +1,249 @@
 import SwiftUI
-import PhotosUI
 
 struct UserProfileView: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var authManager: AuthManager
-    @Binding var name: String
-    @Binding var profileImage: UIImage?
+    @StateObject private var dataManager = DataManager.shared
+    @StateObject private var authManager = AuthManager.shared
     
-    @State private var tempName: String
-    @State private var tempImage: UIImage?
-    @State private var showingImagePicker = false
-    @State private var showingCamera = false
-    @State private var showingActionSheet = false
     @State private var isEditing = false
-    @State private var isAuthenticated: Bool = true
-    @State private var showAlert = false
-    @State private var alertMessage = ""
+    @State private var editedName: String = ""
+    @State private var showingLogoutAlert = false
+    @State private var error: String?
+    @State private var showingError = false
+    @State private var isLoading = false
     
-    init(name: Binding<String>, profileImage: Binding<UIImage?>) {
-        self._name = name
-        self._profileImage = profileImage
-        _tempName = State(initialValue: name.wrappedValue)
-        _tempImage = State(initialValue: profileImage.wrappedValue)
+    init() {
+        _editedName = State(initialValue: DataManager.shared.userName)
     }
     
     var body: some View {
         NavigationStack {
             ScrollView {
-                mainContent
+                VStack(spacing: 24) {
+                    // Profile Header
+                    profileHeader
+                    
+                    // User Info Card
+                    userInfoCard
+                    
+                    // Actions
+                    actionsSection
+                }
+                .padding()
             }
             .background(Colors.background)
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { toolbarContent }
-            .confirmationDialog("Change Profile Picture", isPresented: $showingActionSheet) {
-                dialogButtons
+            .toolbar {
+                toolbarItems
             }
-            .tint(Colors.nasmBlue)
-            .sheet(isPresented: $showingImagePicker) {
-                ImagePicker(
-                    image: $tempImage,
-                    sourceType: .photoLibrary,
-                    showAlert: $showAlert,
-                    alertMessage: $alertMessage
-                )
-            }
-            .fullScreenCover(isPresented: $showingCamera) {
-                ImagePicker(
-                    image: $tempImage,
-                    sourceType: .camera,
-                    showAlert: $showAlert,
-                    alertMessage: $alertMessage
-                )
-            }
-            .alert("Camera Access", isPresented: $showAlert) {
-                Button("OK") {
-                    if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(settingsUrl)
-                    }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text(alertMessage)
-            }
-            .alert("Error", isPresented: $showAlert) {
+            .alert("Error", isPresented: $showingError) {
                 Button("OK", role: .cancel) { }
             } message: {
-                Text(alertMessage)
+                Text(error ?? "An unknown error occurred")
+            }
+            .alert("Logout", isPresented: $showingLogoutAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Logout", role: .destructive) {
+                    logout()
+                }
+            } message: {
+                Text("Are you sure you want to logout?")
+            }
+            .task {
+                await fetchUserProfile()
             }
         }
     }
     
-    private var mainContent: some View {
-        VStack(spacing: 24) {
-            profileCard
-            logoutButton
-        }
-        .padding(20)
-    }
-    
-    private var profileCard: some View {
-        VStack(spacing: 24) {
-            profileImageSection
-            nameSection
-        }
-        .padding(.vertical, 40)
-        .padding(.horizontal, 24)
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-    }
-    
-    private var profileImageSection: some View {
-        Button(action: { }) {
-            ZStack {
-                if let profileImage = tempImage {
-                    Image(uiImage: profileImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 100, height: 100)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(Color.gray.opacity(0.5), lineWidth: 1))
+    private var profileHeader: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "person.circle.fill")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 100, height: 100)
+                .foregroundColor(.gray)
+            
+            VStack(spacing: 8) {
+                if isEditing {
+                    TextField("Name", text: $editedName)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 200)
                 } else {
-                    Image(systemName: "person.crop.circle.fill")
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 100, height: 100)
-                        .foregroundColor(.gray.opacity(0.5))
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(Color.gray.opacity(0.5), lineWidth: 1))
+                    Text(dataManager.userName)
+                        .font(.title2.bold())
                 }
                 
-                if isEditing {
-                    cameraButton
-                }
+                Text(dataManager.userEmail)
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
             }
         }
+        .padding()
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
     }
     
-    private var cameraButton: some View {
-        Image(systemName: "camera")
-            .font(.system(size: 18))
-            .foregroundColor(Colors.nasmBlue)
-            .padding(7)
-            .background(Color.white)
-            .clipShape(Circle())
-            .shadow(color: .gray.opacity(0.3), radius: 4, x: 0, y: 2)
-            .offset(x: 35, y: 35)
-            .onTapGesture { showingActionSheet = true }
-    }
-    
-    private var nameSection: some View {
-        VStack(alignment: .center, spacing: 8) {
-            if isEditing {
-                TextField("Enter your name", text: $tempName)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .font(.title2)
-                    .multilineTextAlignment(.center)
-                    .frame(width: 200)
-                    .tint(Colors.nasmBlue)
-            } else {
-                Text(tempName.isEmpty ? name : tempName)
-                    .font(.title2)
-                    .foregroundColor(.black)
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-    
-    private var logoutButton: some View {
-        Button(action: performLogout) {
-            Text("Logout")
+    private var userInfoCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Account Information")
                 .font(.headline)
+            
+            VStack(alignment: .leading, spacing: 12) {
+                InfoRow(
+                    title: "Name",
+                    value: dataManager.userName,
+                    icon: "person.fill"
+                )
+                
+                InfoRow(
+                    title: "Email",
+                    value: dataManager.userEmail,
+                    icon: "envelope.fill"
+                )
+            }
+        }
+        .padding()
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
+    }
+    
+    private var actionsSection: some View {
+        VStack(spacing: 16) {
+            Button(action: { showingLogoutAlert = true }) {
+                HStack {
+                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                    Text("Logout")
+                }
+                .foregroundColor(.red)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(Color.red)
-                .foregroundColor(.white)
+                .background(Color.white)
                 .cornerRadius(12)
-                .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+                .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
+            }
         }
-        .padding(.horizontal, 24)
     }
     
-    private var toolbarContent: some ToolbarContent {
+    private var toolbarItems: some ToolbarContent {
         Group {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { 
-                    dismiss() 
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Close") {
+                    dismiss()
                 }
-                .foregroundColor(Colors.nasmBlue)
             }
             
-            ToolbarItem(placement: .primaryAction) {
-                Button(isEditing ? "Save" : "Edit") {
-                    handleEditSave()
-                }
-                .foregroundColor(Colors.nasmBlue)
-            }
-        }
-    }
-    
-    private var dialogButtons: some View {
-        Group {
-            Button {
-                showingCamera = true
-            } label: {
-                Text("Take Photo")
-                    .foregroundColor(Colors.nasmBlue)
-            }
-            
-            Button {
-                showingImagePicker = true
-            } label: {
-                Text("Choose from Library")
-                    .foregroundColor(Colors.nasmBlue)
-            }
-            
-            Button("Cancel", role: .cancel) { }
-        }
-    }
-    
-    private func handleEditSave() {
-        if isEditing {
-            Task {
-                do {
-                    // Update backend first
-                    try await DataManager.shared.updateUserProfile(name: tempName, image: tempImage)
-                    
-                    await MainActor.run {
-                        // Only update local state if backend update was successful
-                        name = tempName
-                        profileImage = tempImage
-                        isEditing = false
-                        
-                        // Notify about profile image update
-                        NotificationCenter.default.post(
-                            name: NSNotification.Name("ProfileImageUpdated"),
-                            object: nil
-                        )
-                        
-                        dismiss()
-                    }
-                } catch {
-                    await MainActor.run {
-                        alertMessage = "Failed to update profile: \(error.localizedDescription)"
-                        showAlert = true
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if isLoading {
+                    ProgressView()
+                } else {
+                    Button(isEditing ? "Save" : "Edit") {
+                        if isEditing {
+                            Task {
+                                await updateProfile()
+                            }
+                        } else {
+                            startEditing()
+                        }
                     }
                 }
             }
-        } else {
-            withAnimation {
-                isEditing.toggle()
+        }
+    }
+    
+    private func fetchUserProfile() async {
+        print("UserProfileView: Fetching user profile")
+        do {
+            let profile = try await APIClient.shared.getProfile()
+            print("UserProfileView: Profile fetched - Name:", profile.name, "Email:", profile.email)
+            
+            await MainActor.run {
+                dataManager.saveUserName(profile.name)
+                dataManager.saveUserEmail(profile.email)
+                editedName = profile.name
+                print("UserProfileView: Profile updated in UI and DataManager")
+            }
+        } catch {
+            print("UserProfileView: Error fetching profile:", error)
+            await MainActor.run {
+                self.error = handleError(error)
+                showingError = true
             }
         }
     }
     
-    private func performLogout() {
-        APIClient.shared.logout()
-        authManager.isAuthenticated = false
-        DataManager.shared.clearAuthToken()
+    private func updateProfile() async {
+        print("UserProfileView: Updating profile - New name:", editedName)
+        isLoading = true
+        do {
+            try await dataManager.updateUserProfile(name: editedName)
+            await MainActor.run {
+                dataManager.saveUserName(editedName)
+                isEditing = false
+                isLoading = false
+                print("UserProfileView: Profile update successful - New name:", editedName)
+            }
+        } catch {
+            print("UserProfileView: Error updating profile:", error)
+            await MainActor.run {
+                isLoading = false
+                self.error = handleError(error)
+                showingError = true
+            }
+        }
+    }
+    
+    private func startEditing() {
+        editedName = dataManager.userName
+        isEditing = true
+        print("UserProfileView: Started editing - Current name:", dataManager.userName)
+    }
+    
+    private func logout() {
+        print("UserProfileView: Initiating logout - User:", dataManager.userName, "Email:", dataManager.userEmail)
+        authManager.logout()
         dismiss()
+    }
+    
+    private func handleError(_ error: Error) -> String {
+        switch error {
+        case APIError.unauthorized:
+            return "Your session has expired. Please log in again"
+        case APIError.serverError(let message):
+            return "Server error: \(message)"
+        case APIError.networkError:
+            return "Network error. Please check your connection"
+        default:
+            return "An unexpected error occurred: \(error.localizedDescription)"
+        }
+    }
+}
+
+// Helper view for info rows
+private struct InfoRow: View {
+    let title: String
+    let value: String
+    let icon: String
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(Colors.nasmBlue)
+                .frame(width: 20)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                Text(value)
+                    .font(.body)
+                    .fontWeight(.medium)
+            }
+            
+            Spacer()
+        }
     }
 } 

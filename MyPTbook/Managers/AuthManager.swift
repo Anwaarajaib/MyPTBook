@@ -1,39 +1,45 @@
 import Foundation
 
-@MainActor
 class AuthManager: ObservableObject {
+    @Published var isAuthenticated = false
+    private let dataManager = DataManager.shared
+    
     static let shared = AuthManager()
     
-    @Published var isAuthenticated: Bool {
-        didSet {
-            UserDefaults.standard.set(isAuthenticated, forKey: "isAuthenticated")
+    private init() {
+        isAuthenticated = dataManager.isLoggedIn()
+        print("AuthManager: Initialized - isAuthenticated:", isAuthenticated)
+        if isAuthenticated {
+            print("AuthManager: Current user - Name:", dataManager.userName, "Email:", dataManager.userEmail)
         }
-    }
-    
-    init() {
-        // Load saved authentication state when initializing
-        self.isAuthenticated = UserDefaults.standard.bool(forKey: "isAuthenticated")
     }
     
     func login(email: String, password: String) async throws {
-        let token = try await APIClient.shared.login(email: email, password: password)
+        print("AuthManager: Attempting login for email:", email)
+        let response = try await APIClient.shared.login(email: email, password: password)
+        
         await MainActor.run {
+            dataManager.handleLoginSuccess(response: response)
             isAuthenticated = true
-            DataManager.shared.saveAuthToken(token)
+            print("AuthManager: Login successful - User:", response.user.name, "Email:", response.user.email)
         }
     }
     
-    func register(email: String, password: String, name: String = "") async throws {
-        let token = try await APIClient.shared.register(email: email, password: password, name: name)
+    func register(name: String, email: String, password: String) async throws {
+        print("AuthManager: Attempting registration - Name:", name, "Email:", email)
+        let response = try await APIClient.shared.register(name: name, email: email, password: password)
+        
         await MainActor.run {
+            dataManager.handleLoginSuccess(response: response)
             isAuthenticated = true
-            DataManager.shared.saveAuthToken(token)
+            print("AuthManager: Registration successful - User:", response.user.name, "Email:", response.user.email)
         }
     }
     
     func logout() {
+        print("AuthManager: Logging out user - Name:", dataManager.userName, "Email:", dataManager.userEmail)
+        dataManager.logout()
         isAuthenticated = false
-        // Clear any stored user data if needed
-        UserDefaults.standard.removeObject(forKey: "userEmail")
+        print("AuthManager: Logout successful")
     }
 } 

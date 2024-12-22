@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct LoginView: View {
-    @EnvironmentObject var authManager: AuthManager
+    @StateObject private var authManager = AuthManager.shared
     @State private var email = ""
     @State private var password = ""
     @State private var showingAlert = false
@@ -61,17 +61,17 @@ struct LoginView: View {
     }
     
     private func login() {
+        guard !isLoading else { return }
         isLoading = true
+        print("Attempting login with email:", email)
         
         Task {
             do {
-                print("Attempting login with email:", email)
-                let token = try await APIClient.shared.login(email: email, password: password)
-                print("Login successful, token received:", token)
-                
+                print("Starting login process...")
+                try await authManager.login(email: email, password: password)
+                print("Login successful")
                 await MainActor.run {
-                    authManager.isAuthenticated = true
-                    DataManager.shared.saveAuthToken(token)
+                    isLoading = false
                 }
             } catch {
                 print("Login error:", error)
@@ -89,12 +89,21 @@ struct LoginView: View {
         switch error {
         case APIError.unauthorized:
             return "Invalid email or password"
-        case APIError.networkError(let error as URLError):
-            return "Network error: \(error.localizedDescription)"
+        case APIError.networkError(let urlError as URLError):
+            switch urlError.code {
+            case .timedOut:
+                return "Request timed out. Please try again."
+            case .notConnectedToInternet:
+                return "No internet connection. Please check your connection and try again."
+            default:
+                return "Network error: \(urlError.localizedDescription)"
+            }
         case APIError.serverError(let message):
             return "Server error: \(message)"
         case APIError.validationError(let errors):
             return errors.joined(separator: "\n")
+        case APIError.decodingError:
+            return "Error processing server response. Please try again."
         default:
             return "An unexpected error occurred: \(error.localizedDescription)"
         }

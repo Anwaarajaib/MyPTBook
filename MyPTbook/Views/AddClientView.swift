@@ -92,80 +92,44 @@ struct AddClientView: View {
     // MARK: - Client Details Card
     private var clientDetailsCard: some View {
         VStack(spacing: 12) {
-            // Profile Image and Name Section
-            HStack(alignment: .top, spacing: contentSpacing * 2) {
-                // Left side - Profile Image
-                ZStack {
-                    if let profileImage = selectedImage {
-                        Image(uiImage: profileImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 80, height: 80)
-                            .clipShape(Circle())
-                            .overlay(
-                                Circle()
-                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                            )
-                            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-                    } else {
-                        Image(systemName: "person.crop.circle.fill")
-                            .resizable()
-                            .frame(width: 80, height: 80)
-                            .foregroundColor(.gray.opacity(0.3))
-                    }
-                    
-                    Image(systemName: "camera")
-                        .font(.system(size: 18))
-                        .foregroundColor(Colors.nasmBlue)
-                        .padding(7)
-                        .background(Color.white)
-                        .clipShape(Circle())
-                        .shadow(color: .gray.opacity(0.3), radius: 4, x: 0, y: 2)
-                        .offset(x: 26, y: 26)
-                }
-                .onTapGesture { showingActionSheet = true }
-                .frame(width: minimumTapTarget, height: minimumTapTarget)
-                .padding(.top, 7)
-                .padding(.leading, 7)
+            // Profile Image Section
+            profileImageSection
+                .padding(.top, cardPadding)
+            
+            // Name and Metrics Section
+            VStack(alignment: .leading, spacing: 16) {
+                // Name
+                TextField("Name", text: $name)
+                    .font(.title2.bold())
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .foregroundColor(.primary)
+                    .tint(Colors.nasmBlue)
                 
-                // Right side - Name and Metrics
-                VStack(alignment: .leading, spacing: 16) {
-                    // Name
-                    TextField("Name", text: $name)
-                        .font(.title2.bold())
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .foregroundColor(.primary)
-                        .tint(Colors.nasmBlue)
+                // Metrics in horizontal layout
+                HStack(spacing: contentSpacing) {
+                    MetricView(
+                        title: "Age",
+                        value: $age,
+                        unit: "years",
+                        isEditing: true
+                    )
                     
-                    // Metrics in horizontal layout
-                    HStack(spacing: contentSpacing) {
-                        MetricView(
-                            title: "Age",
-                            value: $age,
-                            unit: "years",
-                            isEditing: true
-                        )
-                        
-                        MetricView(
-                            title: "Height",
-                            value: $height,
-                            unit: "cm",
-                            isEditing: true
-                        )
-                        
-                        MetricView(
-                            title: "Weight",
-                            value: $weight,
-                            unit: "kg",
-                            isEditing: true
-                        )
-                    }
+                    MetricView(
+                        title: "Height",
+                        value: $height,
+                        unit: "cm",
+                        isEditing: true
+                    )
+                    
+                    MetricView(
+                        title: "Weight",
+                        value: $weight,
+                        unit: "kg",
+                        isEditing: true
+                    )
                 }
-                .padding(.top, -5)
             }
             .padding(.horizontal, cardPadding)
-            .padding(.top, cardPadding)
-            .padding(.bottom, 8)
             
             // Medical History and Goals
             HStack(alignment: .top, spacing: contentSpacing) {
@@ -235,8 +199,12 @@ struct AddClientView: View {
     // MARK: - Dialog Buttons
     private var dialogButtons: some View {
         Group {
-            Button("Take Photo") { showingCamera = true }
-            Button("Choose from Library") { showingImagePicker = true }
+            Button("Take New Photo") {
+                showingCamera = true
+            }
+            Button("Choose from Library") {
+                showingImagePicker = true
+            }
             Button("Cancel", role: .cancel) { }
         }
     }
@@ -246,31 +214,33 @@ struct AddClientView: View {
         isProcessing = true
         
         do {
+            guard let userId = dataManager.getUserId() else {
+                throw APIError.serverError("User ID not found")
+            }
+            
+            // Upload image if selected
+            var imageUrl = ""
+            if let image = selectedImage,
+               let imageData = image.jpegData(compressionQuality: 0.7) {
+                print("Uploading client image...")
+                imageUrl = try await APIClient.shared.uploadImage(imageData)
+                print("Image uploaded successfully:", imageUrl)
+            }
+            
             let newClient = Client(
-                id: UUID(),
                 name: name,
                 age: Int(age) ?? 0,
                 height: Double(height) ?? 0,
                 weight: Double(weight) ?? 0,
                 medicalHistory: medicalHistory,
                 goals: goals,
-                sessions: [],  // Empty array for new client
-                profileImage: selectedImage,
-                nutritionPlan: ""  // Empty string for new client
+                clientImage: imageUrl,  // Use the uploaded image URL
+                user: userId
             )
             
+            print("Creating client with userId:", userId)
             let savedClient = try await dataManager.addClient(newClient)
             print("Client saved successfully:", savedClient)
-            
-            // Save the image if one was selected
-            if let image = selectedImage {
-                DataManager.shared.saveClientImage(image, clientId: savedClient.id)
-                
-                // Update the client's image in memory
-                if let index = dataManager.clients.firstIndex(where: { $0.id == savedClient.id }) {
-                    dataManager.clients[index].profileImage = image
-                }
-            }
             
             await MainActor.run {
                 isProcessing = false
@@ -352,5 +322,56 @@ struct AddClientView: View {
                 .cornerRadius(8)
                 .tint(Colors.nasmBlue)
         }
+    }
+    
+    // MARK: - Profile Image Section
+    private var profileImageSection: some View {
+        VStack {
+            ZStack {
+                if let profileImage = selectedImage {
+                    Image(uiImage: profileImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 100, height: 100)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color.gray.opacity(0.2), lineWidth: 1))
+                        .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                } else {
+                    Circle()
+                        .fill(Color.gray.opacity(0.1))
+                        .frame(width: 100, height: 100)
+                        .overlay(
+                            Image(systemName: "person.crop.circle.fill")
+                                .resizable()
+                                .scaledToFit()
+                                .padding(25)
+                                .foregroundColor(.gray.opacity(0.3))
+                        )
+                }
+                
+                // Add Camera Button
+                Button(action: { showingActionSheet = true }) {
+                    Circle()
+                        .fill(Colors.nasmBlue)
+                        .frame(width: 32, height: 32)
+                        .overlay(
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 14))
+                                .foregroundColor(.white)
+                        )
+                        .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+                }
+                .offset(x: 35, y: 35)
+            }
+            
+            // Add "Add Photo" text button
+            Button(action: { showingActionSheet = true }) {
+                Text(selectedImage == nil ? "Add Photo" : "Change Photo")
+                    .font(.subheadline)
+                    .foregroundColor(Colors.nasmBlue)
+            }
+            .padding(.top, 8)
+        }
+        .padding(.bottom, 16)
     }
 }

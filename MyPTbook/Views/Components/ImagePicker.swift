@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import AVFoundation
+import MyPTbook.Components
 
 struct ImagePicker: UIViewControllerRepresentable {
     @Binding var image: UIImage?
