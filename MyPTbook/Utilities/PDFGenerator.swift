@@ -8,11 +8,11 @@ class PDFGenerator {
     private static let sectionHeaderFont = UIFont.systemFont(ofSize: 20, weight: .semibold)
     private static let bodyFont = UIFont.systemFont(ofSize: 14, weight: .regular)
     
-    static func generateNutritionPDF(clientName: String, sections: [NutritionSectionModel]) -> Data? {
-        let pageWidth: CGFloat = 612  // US Letter width
-        let pageHeight: CGFloat = 792  // US Letter height
+    static func generateNutritionPDF(clientName: String, nutrition: Nutrition) -> Data? {
+        // Remove unused sections conversion
+        let pageWidth: CGFloat = 612
+        let pageHeight: CGFloat = 792
         let margin: CGFloat = 50
-        _ = pageWidth - (margin * 2)
         
         let pdfMetaData = [
             kCGPDFContextCreator: "MyPTbook",
@@ -58,7 +58,7 @@ class PDFGenerator {
             let logoX: CGFloat = margin - 40  // Move slightly left
             let logoY: CGFloat = 20  // Adjust vertical position
             
-            if let logoImage = UIImage(named: "trainer-silhouette") {
+            if let logoImage = UIImage(named: "Trainer-logo") {
                 let logoRect = CGRect(x: logoX, y: logoY, width: logoWidth, height: logoHeight)
                 logoImage.draw(in: logoRect)
             }
@@ -87,16 +87,16 @@ class PDFGenerator {
             // Adjust starting position for content
             var yPosition: CGFloat = 150
             
-            // Draw sections
-            for section in sections {
-                // Draw section header with icon
-                let sectionAttr: [NSAttributedString.Key: Any] = [
+            // Draw meals instead of sections
+            for meal in nutrition.meals {
+                // Draw meal header with icon
+                let mealAttr: [NSAttributedString.Key: Any] = [
                     .font: sectionHeaderFont,
                     .foregroundColor: nasmBlue
                 ]
                 
-                // Draw section icon
-                let iconName = getSectionIcon(section.title)
+                // Draw meal icon
+                let iconName = getMealIcon(meal.mealName)
                 let configuration = UIImage.SymbolConfiguration(pointSize: 24, weight: .medium)
                 if let iconImage = UIImage(systemName: iconName, withConfiguration: configuration) {
                     let iconSize: CGFloat = 24
@@ -111,16 +111,16 @@ class PDFGenerator {
                     
                     tintedIcon.draw(in: iconRect)
                     
-                    // Draw section title after icon
-                    section.title.draw(at: CGPoint(x: margin + iconSize + 10, y: yPosition), 
-                                      withAttributes: sectionAttr)
+                    // Draw meal name after icon
+                    meal.mealName.draw(at: CGPoint(x: margin + iconSize + 10, y: yPosition), 
+                                    withAttributes: mealAttr)
                 } else {
-                    section.title.draw(at: CGPoint(x: margin, y: yPosition), 
-                                      withAttributes: sectionAttr)
+                    meal.mealName.draw(at: CGPoint(x: margin, y: yPosition), 
+                                    withAttributes: mealAttr)
                 }
                 yPosition += 30
                 
-                // Draw section underline
+                // Draw underline for meal name
                 let underlinePath = UIBezierPath()
                 underlinePath.move(to: CGPoint(x: margin, y: yPosition))
                 underlinePath.addLine(to: CGPoint(x: margin + 100, y: yPosition))
@@ -129,32 +129,21 @@ class PDFGenerator {
                 underlinePath.stroke()
                 yPosition += 20
                 
-                // Draw items
-                for item in section.items {
-                    // Check if we need a new page
-                    if yPosition > pageHeight - margin {
-                        context.beginPage()
-                        yPosition = margin
-                    }
-                    
-                    // Draw single bullet point
-                    let bulletAttr: [NSAttributedString.Key: Any] = [
-                        .font: bodyFont,
-                        .foregroundColor: nasmBlue
-                    ]
-                    "•".draw(at: CGPoint(x: margin + 10, y: yPosition), withAttributes: bulletAttr)
-                    
-                    // Draw original item text without any bullet points
+                // Draw meal items
+                for item in meal.items {
+                    let itemText = "\(item.name) - \(item.quantity)"
                     let itemAttr: [NSAttributedString.Key: Any] = [
                         .font: bodyFont,
                         .foregroundColor: UIColor.black
                     ]
                     
-                    // Remove any existing bullet points from the item text
-                    let cleanedItem = item.trimmingCharacters(in: .whitespaces)
-                        .replacingOccurrences(of: "^[•\\-\\*]\\s*", with: "", options: .regularExpression)
+                    // Draw bullet point
+                    "•".draw(at: CGPoint(x: margin + 10, y: yPosition), 
+                            withAttributes: [.font: bodyFont, .foregroundColor: nasmBlue])
                     
-                    cleanedItem.draw(at: CGPoint(x: margin + 30, y: yPosition), withAttributes: itemAttr)
+                    // Draw item text
+                    itemText.draw(at: CGPoint(x: margin + 30, y: yPosition), 
+                                withAttributes: itemAttr)
                     
                     yPosition += 25
                 }
@@ -163,7 +152,7 @@ class PDFGenerator {
             }
             
             // Draw footer
-            let footerText = "Generated by \(DataManager.shared.getUserName())"
+            let footerText = "Generated by My Personal Training Book"
             let footerAttr: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: 10),
                 .foregroundColor: UIColor.gray
@@ -203,8 +192,8 @@ class PDFGenerator {
         return nil
     }
     
-    private static func getSectionIcon(_ title: String) -> String {
-        switch title.lowercased() {
+    private static func getMealIcon(_ mealName: String) -> String {
+        switch mealName.lowercased() {
         case "breakfast": return "sun.rise.fill"
         case "lunch": return "sun.max.fill"
         case "dinner": return "moon.stars.fill"
@@ -226,7 +215,7 @@ class PDFGenerator {
         let pdfMetaData = [
             kCGPDFContextCreator: "MyPTbook",
             kCGPDFContextAuthor: "MyPTbook",
-            kCGPDFContextTitle: "MyPTbook - \(clientName)'s Workout Program"
+            kCGPDFContextTitle: "MyPTbook - \(clientName)'s Training Program"
         ]
         
         let format = UIGraphicsPDFRendererFormat()
@@ -245,54 +234,51 @@ class PDFGenerator {
             let bodyFont = UIFont.systemFont(ofSize: 14, weight: .regular)
             let nasmBlue = UIColor(Colors.nasmBlue)
             
-            // Helper function to draw first page header
-            func drawFirstPageHeader() {
-                // Draw header background
-                let headerRect = CGRect(x: 0, y: 0, width: pageWidth, height: 120)
-                nasmBlue.withAlphaComponent(0.1).setFill()
-                UIBezierPath(rect: headerRect).fill()
-                
-                // Draw logo and app name
-                let appName = "MyPTbook / \(DataManager.shared.getUserName())"
-                let appNameAttr: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: 28, weight: .bold),
-                    .foregroundColor: nasmBlue
-                ]
-                
-                // Draw app logo
-                let logoWidth: CGFloat = 60
-                let logoHeight: CGFloat = 110
-                let logoX: CGFloat = margin - 40
-                let logoY: CGFloat = 20
-                
-                if let logoImage = UIImage(named: "trainer-silhouette") {
-                    let logoRect = CGRect(x: logoX, y: logoY, width: logoWidth, height: logoHeight)
-                    logoImage.draw(in: logoRect)
-                }
-                
-                appName.draw(at: CGPoint(x: logoX + logoWidth + 10, y: 25), withAttributes: appNameAttr)
-                
-                let titleString = "\(clientName)'s Training Sessions"
-                let titleAttr: [NSAttributedString.Key: Any] = [
-                    .font: titleFont,
-                    .foregroundColor: UIColor.black
-                ]
-                titleString.draw(at: CGPoint(x: logoX + logoWidth + 10, y: 60), withAttributes: titleAttr)
-                
-                let dateFormatter = DateFormatter()
-                dateFormatter.dateStyle = .long
-                let dateString = dateFormatter.string(from: Date())
-                let dateAttr: [NSAttributedString.Key: Any] = [
-                    .font: subtitleFont,
-                    .foregroundColor: UIColor.gray
-                ]
-                dateString.draw(at: CGPoint(x: logoX + logoWidth + 10, y: 90), withAttributes: dateAttr)
-            }
-            
             // Draw first page
             context.beginPage()
-            drawFirstPageHeader()
-            var yPosition: CGFloat = 180
+            
+            // Draw header background
+            let headerRect = CGRect(x: 0, y: 0, width: pageWidth, height: 120)
+            nasmBlue.withAlphaComponent(0.1).setFill()
+            UIBezierPath(rect: headerRect).fill()
+            
+            // Draw logo and app name
+            let appName = "MyPTbook / \(DataManager.shared.getUserName())"
+            let appNameAttr: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 28, weight: .bold),
+                .foregroundColor: nasmBlue
+            ]
+            
+            // Draw app logo
+            let logoWidth: CGFloat = 60
+            let logoHeight: CGFloat = 110
+            let logoX: CGFloat = margin - 40
+            let logoY: CGFloat = 20
+            
+            if let logoImage = UIImage(named: "Trainer-logo") {
+                let logoRect = CGRect(x: logoX, y: logoY, width: logoWidth, height: logoHeight)
+                logoImage.draw(in: logoRect)
+            }
+            
+            appName.draw(at: CGPoint(x: logoX + logoWidth + 10, y: 25), withAttributes: appNameAttr)
+            
+            let titleString = "\(clientName)'s Training Program"
+            let titleAttr: [NSAttributedString.Key: Any] = [
+                .font: titleFont,
+                .foregroundColor: UIColor.black
+            ]
+            titleString.draw(at: CGPoint(x: logoX + logoWidth + 10, y: 60), withAttributes: titleAttr)
+            
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateStyle = .long
+            let dateString = dateFormatter.string(from: Date())
+            let dateAttr: [NSAttributedString.Key: Any] = [
+                .font: subtitleFont,
+                .foregroundColor: UIColor.gray
+            ]
+            dateString.draw(at: CGPoint(x: logoX + logoWidth + 10, y: 90), withAttributes: dateAttr)
+            
+            var yPosition: CGFloat = 150
             
             // Draw program overview
             let summaryBox = UIBezierPath(roundedRect: CGRect(x: margin, y: yPosition, 
@@ -317,59 +303,143 @@ class PDFGenerator {
             
             yPosition += 120
             
+            // Number the sessions
+            let numberedSessions = sessions.enumerated().map { (index, session) in
+                var numberedSession = session
+                numberedSession.sessionNumber = index + 1
+                return numberedSession
+            }
+            
             // Draw sessions
-            for session in sessions.sorted(by: { 
-                // Sort by completedDate if available, otherwise keep original order
-                if let date1 = $0.completedDate, let date2 = $1.completedDate {
-                    return date1 < date2
-                }
-                return false
-            }) {
-                // Calculate height needed for this session
-                let sessionHeight: CGFloat = 90  // Basic session header height + exercises list
+            for session in numberedSessions {
+                // Calculate session title height
+                let sessionTitle = "Session \(session.sessionNumber): \(session.workoutName)"
+                let titleAttributes: [NSAttributedString.Key: Any] = [
+                    .font: sectionHeaderFont,
+                    .foregroundColor: nasmBlue
+                ]
+                let titleSize = (sessionTitle as NSString).boundingRect(
+                    with: CGSize(width: contentWidth - 40, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    attributes: titleAttributes,
+                    context: nil
+                )
                 
-                // Check if we need a new page
-                if yPosition + sessionHeight > pageHeight - margin {
-                    context.beginPage()
-                    yPosition = margin + 50
-                }
+                // Calculate card height with padding (20 points total - 10 top and bottom)
+                let cardHeight = ceil(titleSize.height) + 20
                 
-                // Draw session card
+                // Draw session card with dynamic height
                 let cardPath = UIBezierPath(roundedRect: CGRect(x: margin, y: yPosition, 
-                                                              width: contentWidth, height: sessionHeight),
+                                                              width: contentWidth, height: cardHeight),
                                           cornerRadius: 8)
                 nasmBlue.withAlphaComponent(0.1).setFill()
                 cardPath.fill()
                 
-                // Draw workout name
-                session.workoutName.draw(at: CGPoint(x: margin + 20, y: yPosition + 10),
-                                      withAttributes: [
-                                          .font: sectionHeaderFont,
-                                          .foregroundColor: nasmBlue
-                                      ])
+                // Draw session header centered vertically in the card
+                let titleY = yPosition + (cardHeight - titleSize.height) / 2
+                sessionTitle.draw(
+                    at: CGPoint(x: margin + 20, y: titleY),
+                    withAttributes: titleAttributes
+                )
                 
-                // Draw completion date if available
-                if let completedDate = session.completedDate {
-                    let dateFormatter = DateFormatter()
-                    dateFormatter.dateStyle = .medium
-                    let dateString = dateFormatter.string(from: completedDate)
-                    dateString.draw(at: CGPoint(x: margin + 20, y: yPosition + 40),
-                                   withAttributes: [
-                                       .font: bodyFont,
-                                       .foregroundColor: UIColor.gray
-                                   ])
+                // Adjust yPosition to account for the dynamic card height
+                yPosition += cardHeight + 10  // Add 10 points spacing after the card
+                
+                // Draw exercise table headers
+                let tableHeaders = ["Exercise", "Sets", "Reps"]
+                let columnWidths: [CGFloat] = [
+                    contentWidth * 0.6,
+                    contentWidth * 0.15,
+                    contentWidth * 0.15
+                ]
+                
+                for (index, header) in tableHeaders.enumerated() {
+                    let headerX = if index == 0 {
+                        margin + 20
+                    } else if index == 1 {
+                        pageWidth - margin - (columnWidths[2] + columnWidths[1]) - 20
+                    } else {
+                        pageWidth - margin - columnWidths[2] - 20
+                    }
+                    
+                    header.draw(at: CGPoint(x: headerX, y: yPosition),
+                              withAttributes: [
+                                .font: bodyFont.bold(),
+                                .foregroundColor: nasmBlue
+                              ])
                 }
                 
-                // Draw exercise count
-                let exerciseCount = "\(session.exercises.count) exercises"
-                exerciseCount.draw(at: CGPoint(x: margin + 20, y: yPosition + 65),
-                                  withAttributes: [
-                                      .font: bodyFont,
-                                      .foregroundColor: UIColor.darkGray
-                                  ])
+                yPosition += 25
                 
-                yPosition += sessionHeight + 20  // Add spacing between sessions
+                // Draw separator line
+                let linePath = UIBezierPath()
+                linePath.move(to: CGPoint(x: margin + 20, y: yPosition))
+                linePath.addLine(to: CGPoint(x: pageWidth - margin - 20, y: yPosition))
+                nasmBlue.withAlphaComponent(0.2).setStroke()
+                linePath.lineWidth = 1
+                linePath.stroke()
+                
+                yPosition += 10
+                
+                // Draw exercises
+                for exercise in session.exercises {
+                    // Check if we need a new page
+                    if yPosition > pageHeight - margin - 50 {
+                        context.beginPage()
+                        yPosition = margin + 50
+                    }
+                    
+                    // Exercise name
+                    exercise.exerciseName.draw(
+                        at: CGPoint(x: margin + 20, y: yPosition),
+                        withAttributes: [
+                            .font: bodyFont,
+                            .foregroundColor: UIColor.black
+                        ]
+                    )
+                    
+                    // Sets
+                    String(exercise.sets).draw(
+                        at: CGPoint(x: pageWidth - margin - (columnWidths[2] + columnWidths[1]) - 20, y: yPosition),
+                        withAttributes: [
+                            .font: bodyFont,
+                            .foregroundColor: UIColor.black
+                        ]
+                    )
+                    
+                    // Reps
+                    String(exercise.reps).draw(
+                        at: CGPoint(x: pageWidth - margin - columnWidths[2] - 20, y: yPosition),
+                        withAttributes: [
+                            .font: bodyFont,
+                            .foregroundColor: UIColor.black
+                        ]
+                    )
+                    
+                    yPosition += 30
+                }
+                
+                yPosition += 40  // Space between sessions
+                
+                // Check if we need a new page for the next session
+                if yPosition > pageHeight - margin - 150 && session.id != sessions.last?.id {
+                    context.beginPage()
+                    yPosition = margin + 50
+                }
             }
+            
+            // Draw footer
+            let footerText = "Generated by My Personal Training Book"
+            let footerAttr: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 10),
+                .foregroundColor: UIColor.gray
+            ]
+            let footerSize = footerText.size(withAttributes: footerAttr)
+            footerText.draw(
+                at: CGPoint(x: pageWidth - margin - footerSize.width,
+                           y: pageHeight - margin),
+                withAttributes: footerAttr
+            )
         }
     }
     

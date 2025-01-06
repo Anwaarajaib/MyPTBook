@@ -56,10 +56,10 @@ export const getExerciseById = async (req, res) => {
 export const updateExercise = async (req, res) => {
     try {
         const exerciseId = req.params.exerciseId;
-        const { sets, reps, weight, time, groupType } = req.body;
+        const { exerciseName, sets, reps, weight, time, groupType } = req.body;
         const exercise = await Exercise.findByIdAndUpdate(
             exerciseId,
-            { sets, reps, weight, time, groupType },
+            { exerciseName, sets, reps, weight, time, groupType },
             { new: true }
         );
         if (!exercise) {

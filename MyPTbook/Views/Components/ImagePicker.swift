@@ -1,7 +1,6 @@
 import SwiftUI
 import UIKit
 import AVFoundation
-import MyPTbook.Components
 
 struct ImagePicker: UIViewControllerRepresentable {
     @Binding var image: UIImage?
@@ -68,13 +67,23 @@ struct ImagePicker: UIViewControllerRepresentable {
         }
         
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            print("ImagePicker Coordinator: Image selected")
             if let image = info[.originalImage] as? UIImage {
-                parent.image = image
+                print("ImagePicker Coordinator: Processing image of size: \(image.size)")
+                // Update on main thread immediately
+                self.parent.image = image
+                print("ImagePicker Coordinator: Image assigned to binding")
+                
+                // Dismiss first, then update UI
+                parent.dismiss()
+            } else {
+                print("ImagePicker Coordinator: Failed to get image from picker")
+                parent.dismiss()
             }
-            parent.dismiss()
         }
         
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            print("ImagePicker Coordinator: Picker cancelled")
             parent.dismiss()
         }
     }

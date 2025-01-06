@@ -1,14 +1,5 @@
 import Foundation
 
-// This enum provides namespacing for our model types
-enum Models {
-    // These types are now unambiguous because they're in separate files
-    typealias Client = MyPTbook.Client
-    typealias Session = MyPTbook.Session
-    typealias Exercise = MyPTbook.Exercise
-    typealias Trainer = MyPTbook.Trainer
-}
-
 struct Nutrition: Codable, Identifiable {
     let _id: String
     let client: String
@@ -51,6 +42,4 @@ struct Nutrition: Codable, Identifiable {
             self.quantity = quantity
         }
     }
-}
-
-// Note: UserResponse is now defined in APIClient.swift
+} 

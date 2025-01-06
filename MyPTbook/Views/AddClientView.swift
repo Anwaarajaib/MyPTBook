@@ -92,44 +92,92 @@ struct AddClientView: View {
     // MARK: - Client Details Card
     private var clientDetailsCard: some View {
         VStack(spacing: 12) {
-            // Profile Image Section
-            profileImageSection
-                .padding(.top, cardPadding)
-            
-            // Name and Metrics Section
-            VStack(alignment: .leading, spacing: 16) {
-                // Name
-                TextField("Name", text: $name)
-                    .font(.title2.bold())
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .foregroundColor(.primary)
-                    .tint(Colors.nasmBlue)
-                
-                // Metrics in horizontal layout
-                HStack(spacing: contentSpacing) {
-                    MetricView(
-                        title: "Age",
-                        value: $age,
-                        unit: "years",
-                        isEditing: true
-                    )
+            // Profile Image and Name Section
+            HStack(alignment: .top, spacing: contentSpacing * 2) {
+                // Left side - Profile Image
+                ZStack {
+                    if let profileImage = selectedImage {
+                        Image(uiImage: profileImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 80, height: 80)
+                            .clipShape(Circle())
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                            )
+                            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                    } else {
+                        Circle()
+                            .fill(Color.gray.opacity(0.1))
+                            .frame(width: 80, height: 80)
+                            .overlay(
+                                Image(systemName: "person.fill")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 35, height: 35)
+                                    .foregroundColor(Color.gray.opacity(0.5))
+                            )
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                            )
+                            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+                    }
                     
-                    MetricView(
-                        title: "Height",
-                        value: $height,
-                        unit: "cm",
-                        isEditing: true
-                    )
-                    
-                    MetricView(
-                        title: "Weight",
-                        value: $weight,
-                        unit: "kg",
-                        isEditing: true
-                    )
+                    // Camera Button
+                    Image(systemName: "camera")
+                        .font(.system(size: 18))
+                        .foregroundColor(Colors.nasmBlue)
+                        .padding(7)
+                        .background(Color.white)
+                        .clipShape(Circle())
+                        .shadow(color: .gray.opacity(0.3), radius: 4, x: 0, y: 2)
+                        .offset(x: 26, y: 26)
                 }
+                .onTapGesture { showingActionSheet = true }
+                .frame(width: minimumTapTarget, height: minimumTapTarget)
+                .padding(.top, 7)
+                .padding(.leading, 7)
+                
+                // Right side - Name and Metrics
+                VStack(alignment: .leading, spacing: 16) {
+                    // Name
+                    TextField("Name", text: $name)
+                        .font(.title2.bold())
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .foregroundColor(.primary)
+                        .tint(Colors.nasmBlue)
+                    
+                    // Metrics in horizontal layout
+                    HStack(spacing: contentSpacing) {
+                        MetricView(
+                            title: "Age",
+                            value: $age,
+                            unit: "years",
+                            isEditing: true
+                        )
+                        
+                        MetricView(
+                            title: "Height",
+                            value: $height,
+                            unit: "cm",
+                            isEditing: true
+                        )
+                        
+                        MetricView(
+                            title: "Weight",
+                            value: $weight,
+                            unit: "kg",
+                            isEditing: true
+                        )
+                    }
+                }
+                .padding(.top, -5)
             }
             .padding(.horizontal, cardPadding)
+            .padding(.top, cardPadding)
+            .padding(.bottom, 8)
             
             // Medical History and Goals
             HStack(alignment: .top, spacing: contentSpacing) {
@@ -199,12 +247,8 @@ struct AddClientView: View {
     // MARK: - Dialog Buttons
     private var dialogButtons: some View {
         Group {
-            Button("Take New Photo") {
-                showingCamera = true
-            }
-            Button("Choose from Library") {
-                showingImagePicker = true
-            }
+            Button("Take Photo") { showingCamera = true }
+            Button("Choose from Library") { showingImagePicker = true }
             Button("Cancel", role: .cancel) { }
         }
     }
@@ -221,35 +265,36 @@ struct AddClientView: View {
             // Upload image if selected
             var imageUrl = ""
             if let image = selectedImage,
-               let imageData = image.jpegData(compressionQuality: 0.7) {
+               let processedImageData = processImageForUpload(image) {
                 print("Uploading client image...")
-                imageUrl = try await APIClient.shared.uploadImage(imageData)
+                imageUrl = try await APIClient.shared.uploadImage(processedImageData)
                 print("Image uploaded successfully:", imageUrl)
-            }
-            
-            let newClient = Client(
-                name: name,
-                age: Int(age) ?? 0,
-                height: Double(height) ?? 0,
-                weight: Double(weight) ?? 0,
-                medicalHistory: medicalHistory,
-                goals: goals,
-                clientImage: imageUrl,  // Use the uploaded image URL
-                user: userId
-            )
-            
-            print("Creating client with userId:", userId)
-            let savedClient = try await dataManager.addClient(newClient)
-            print("Client saved successfully:", savedClient)
-            
-            await MainActor.run {
-                isProcessing = false
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("RefreshClientData"),
-                    object: nil
+                
+                // Create new client with the image URL
+                let newClient = Client(
+                    name: name,
+                    age: Int(age) ?? 0,
+                    height: Double(height) ?? 0,
+                    weight: Double(weight) ?? 0,
+                    medicalHistory: medicalHistory,
+                    goals: goals,
+                    clientImage: imageUrl,
+                    user: userId
                 )
-                print("Posted refresh notification")
-                dismiss()
+                
+                print("Creating client with userId:", userId)
+                let savedClient = try await dataManager.addClient(newClient)
+                print("Client saved successfully:", savedClient)
+                
+                await MainActor.run {
+                    isProcessing = false
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("RefreshClientData"),
+                        object: nil
+                    )
+                    print("Posted refresh notification")
+                    dismiss()
+                }
             }
         } catch {
             print("Save client error:", error)
@@ -257,6 +302,7 @@ struct AddClientView: View {
                 isProcessing = false
                 self.error = handleError(error)
                 showAlert = true
+                selectedImage = nil  // Reset selected image on error
             }
         }
     }
@@ -373,5 +419,24 @@ struct AddClientView: View {
             .padding(.top, 8)
         }
         .padding(.bottom, 16)
+    }
+    
+    // Add the image processing function
+    private func processImageForUpload(_ image: UIImage) -> Data? {
+        // Calculate target size (20% of original)
+        let scale = 0.2
+        let targetSize = CGSize(
+            width: image.size.width * scale,
+            height: image.size.height * scale
+        )
+        
+        // Resize image
+        UIGraphicsBeginImageContextWithOptions(targetSize, false, 1.0)
+        image.draw(in: CGRect(origin: .zero, size: targetSize))
+        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        
+        // Compress to JPEG with moderate compression
+        return resizedImage?.jpegData(compressionQuality: 0.7)
     }
 }

@@ -33,11 +33,19 @@ class DataManager: ObservableObject {
     // Add userId property
     @Published private(set) var userId: String = ""
     
+    @Published private(set) var userProfileImageUrl: String? {
+        didSet {
+            print("DataManager: Profile image URL updated to:", userProfileImageUrl ?? "nil")
+        }
+    }
+    
     private init() {
-        // Initialize with stored value
+        // Initialize with stored values
         self.userName = defaults.string(forKey: userNameKey) ?? "Your Name"
         self.userEmail = defaults.string(forKey: userEmailKey) ?? ""
+        self.userProfileImageUrl = defaults.string(forKey: "userProfileImageUrl")
         print("DataManager: Initialized with user:", userName, "email:", userEmail)
+        print("DataManager: Initial profile image URL:", userProfileImageUrl ?? "none")
     }
     
     // MARK: - Client CRUD Operations
@@ -206,29 +214,13 @@ class DataManager: ObservableObject {
         let createdExercise = try await APIClient.shared.createExercise(exerciseData: exerciseData)
         print("DataManager: Exercise created successfully:", createdExercise)
         
-        // Update the local session with the new exercise
-        await MainActor.run {
-            if let clientIndex = clients.firstIndex(where: { client in
-                client.sessions?.contains(where: { $0._id == exercise.session }) ?? false
-            }) {
-                var updatedClient = clients[clientIndex]
-                if var sessions = updatedClient.sessions {
-                    if let sessionIndex = sessions.firstIndex(where: { $0._id == exercise.session }) {
-                        var updatedSession = sessions[sessionIndex]
-                        updatedSession.exercises.append(createdExercise)
-                        sessions[sessionIndex] = updatedSession
-                        updatedClient.sessions = sessions
-                        clients[clientIndex] = updatedClient
-                    }
-                }
-            }
-        }
-        
         return createdExercise
     }
     
     func deleteExercise(_ exercise: Exercise) async throws {
+        print("DataManager: Deleting exercise:", exercise._id)
         try await APIClient.shared.deleteExercise(exerciseId: exercise._id)
+        print("DataManager: Exercise deleted successfully")
     }
     
     func getSessionExercises(sessionId: String) async throws -> [Exercise] {
@@ -239,10 +231,20 @@ class DataManager: ObservableObject {
     func handleLoginSuccess(response: LoginResponse) {
         print("DataManager: Handling login success")
         print("DataManager: User info - Name:", response.user.name, "Email:", response.user.email)
+        print("DataManager: Profile image URL from login:", response.user.profileImage ?? "none")
+        
         saveAuthToken(response.token)
         saveUserName(response.user.name)
         saveUserEmail(response.user.email)
         saveUserId(response.user.id)
+        
+        if let profileImage = response.user.profileImage {
+            print("DataManager: Saving profile image URL from login:", profileImage)
+            saveProfileImageUrl(profileImage)
+        } else {
+            print("DataManager: No profile image URL in login response")
+        }
+        
         setLoggedIn(true)
         print("DataManager: Login data saved successfully")
     }
@@ -305,12 +307,14 @@ class DataManager: ObservableObject {
     func clearAllData() {
         print("DataManager: Clearing all data")
         print("DataManager: Previous user info - Name:", userName, "Email:", userEmail)
+        print("DataManager: Previous profile image URL:", userProfileImageUrl ?? "none")
         let domain = Bundle.main.bundleIdentifier!
         defaults.removePersistentDomain(forName: domain)
         defaults.synchronize()
         clients = []
         userName = "Your Name"
         userEmail = ""
+        userProfileImageUrl = nil
         clientNutrition = nil
         print("DataManager: All data cleared")
     }
@@ -407,5 +411,33 @@ class DataManager: ObservableObject {
         let email = getUserEmail()
         print("DataManager: Current user info - Name:", name, "Email:", email)
         return (name, email)
+    }
+    
+    // Add these methods to DataManager
+    func saveProfileImageUrl(_ url: String) {
+        print("DataManager: Saving profile image URL:", url)
+        defaults.set(url, forKey: "userProfileImageUrl")
+        DispatchQueue.main.async {
+            self.userProfileImageUrl = url
+            self.objectWillChange.send()
+            print("DataManager: Profile image URL updated in state")
+        }
+    }
+    
+    // Add this function to DataManager
+    func updateExercise(_ exercise: Exercise) async throws -> Exercise {
+        print("DataManager: Updating exercise:", exercise._id)
+        
+        let exerciseData: [String: Any] = [
+            "exerciseName": exercise.exerciseName,
+            "sets": exercise.sets,
+            "reps": exercise.reps,
+            "weight": exercise.weight,
+            "time": exercise.time as Any,
+            "groupType": exercise.groupType?.rawValue as Any,
+            "session": exercise.session
+        ]
+        
+        return try await APIClient.shared.updateExercise(exerciseId: exercise._id, exerciseData: exerciseData)
     }
 }

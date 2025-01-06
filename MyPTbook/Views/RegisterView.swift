@@ -10,45 +10,125 @@ struct RegisterView: View {
     @State private var name = ""
     @State private var showingAlert = false
     @State private var alertMessage = ""
+    @FocusState private var focusedField: Field?
+    
+    private enum Field {
+        case name, email, password, confirmPassword
+    }
     
     var body: some View {
-        VStack(spacing: 24) {
-            Text("Create Account")
-                .font(.title2.bold())
-                .foregroundColor(Colors.nasmBlue)
-            
-            VStack(spacing: 16) {
-                TextField("Name", text: $name)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .textContentType(.name)
-                
-                TextField("Email", text: $email)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .textContentType(.emailAddress)
-                    .autocapitalization(.none)
-                
-                SecureField("Password", text: $password)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .textContentType(.newPassword)
-                
-                SecureField("Confirm Password", text: $confirmPassword)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .textContentType(.newPassword)
-                
-                Button(action: register) {
-                    Text("Register")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(Colors.nasmBlue)
-                        .cornerRadius(10)
-                }
-                .disabled(!isValidForm)
+        ZStack {
+            // Background gradient with tap gesture
+            LinearGradient(
+                gradient: Gradient(colors: [Color(hex: "003B7E"), Color(hex: "001A3A")]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            .onTapGesture {
+                focusedField = nil // Dismiss keyboard
             }
-            .padding(.horizontal, 32)
+            
+            VStack(spacing: 10) {
+                Image("Trainer-logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 250)
+                    .padding(.top, -30)
+                
+                VStack(spacing: 16) {
+                    HStack {
+                        Image(systemName: "person")
+                            .foregroundColor(.white.opacity(0.7))
+                        TextField("Name", text: $name)
+                            .textContentType(.name)
+                            .foregroundColor(.white)
+                            .font(.system(size: 12, weight: .bold))
+                            .placeholder(when: name.isEmpty) {
+                                Text("Name")
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .font(.system(size: 12, weight: .bold))
+                            }
+                            .focused($focusedField, equals: .name)
+                    }
+                    .padding()
+                    .background(Color.white.opacity(0.2))
+                    .cornerRadius(10)
+                    
+                    HStack {
+                        Image(systemName: "envelope")
+                            .foregroundColor(.white.opacity(0.7))
+                        TextField("Email", text: $email)
+                            .textContentType(.emailAddress)
+                            .autocapitalization(.none)
+                            .foregroundColor(.white)
+                            .font(.system(size: 12, weight: .bold))
+                            .placeholder(when: email.isEmpty) {
+                                Text("Email")
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .font(.system(size: 12, weight: .bold))
+                            }
+                            .focused($focusedField, equals: .email)
+                    }
+                    .padding()
+                    .background(Color.white.opacity(0.2))
+                    .cornerRadius(10)
+                    
+                    HStack {
+                        Image(systemName: "lock")
+                            .foregroundColor(.white.opacity(0.7))
+                        SecureField("Password", text: $password)
+                            .textContentType(.newPassword)
+                            .foregroundColor(.white)
+                            .font(.system(size: 12, weight: .bold))
+                            .placeholder(when: password.isEmpty) {
+                                Text("Password")
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .font(.system(size: 12, weight: .bold))
+                            }
+                            .focused($focusedField, equals: .password)
+                    }
+                    .padding()
+                    .background(Color.white.opacity(0.2))
+                    .cornerRadius(10)
+                    
+                    HStack {
+                        Image(systemName: "lock.shield")
+                            .foregroundColor(.white.opacity(0.7))
+                        SecureField("Confirm Password", text: $confirmPassword)
+                            .textContentType(.newPassword)
+                            .foregroundColor(.white)
+                            .font(.system(size: 12, weight: .bold))
+                            .placeholder(when: confirmPassword.isEmpty) {
+                                Text("Confirm Password")
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .font(.system(size: 12, weight: .bold))
+                            }
+                            .focused($focusedField, equals: .confirmPassword)
+                    }
+                    .padding()
+                    .background(Color.white.opacity(0.2))
+                    .cornerRadius(10)
+                    
+                    Button(action: register) {
+                        Text("REGISTER ACCOUNT")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                    }
+                    .background(
+                        Color.white.opacity(isValidForm ? 0.2 : 0.1)
+                    )
+                    .cornerRadius(10)
+                    .opacity(isValidForm ? 1 : 0.5)
+                    .disabled(!isValidForm)
+                }
+                .padding(.horizontal)
+            }
+            .padding(.top, -20)
+            .padding(.horizontal)
         }
-        .padding(.vertical, 40)
         .navigationBarTitleDisplayMode(.inline)
         .alert("Registration Error", isPresented: $showingAlert) {
             Button("OK", role: .cancel) { }

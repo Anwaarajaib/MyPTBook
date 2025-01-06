@@ -47,12 +47,12 @@ export const getSessionById = async (req, res) => {
 export const updateSession = async (req, res) => {
     try {
         const sessionId = req.params.sessionId;
-        const { isCompleted, completedDate } = req.body;
+        const { workoutName, isCompleted, completedDate } = req.body;
         const session = await Session.findByIdAndUpdate(
             sessionId,
-            { isCompleted, completedDate },
+            { workoutName, isCompleted, completedDate },
             { new: true }
-        );
+        ).populate('exercises');
         if (!session) {
             return res.status(404).json({ message: 'Session not found' });
         }

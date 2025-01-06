@@ -2,12 +2,14 @@ import Foundation
 
 struct Session: Codable, Identifiable {
     let _id: String
-    var id: String { _id }
+    let client: String
     var workoutName: String
-    var client: String
     var completedDate: Date?
     var exercises: [Exercise]
     var isCompleted: Bool
+    var sessionNumber: Int = 0
+    
+    var id: String { _id }
     
     private enum CodingKeys: String, CodingKey {
         case _id, workoutName, client, completedDate, exercises, isCompleted

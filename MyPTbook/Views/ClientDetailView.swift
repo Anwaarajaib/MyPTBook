@@ -70,13 +70,11 @@ struct ClientDetailView: View {
                 TopSpacerView()
                 clientDetailsCard
                 
-                // Add Nutrition section here, before sessions
                 if !isEditing {
-                    nutritionSection
-                    
                     SessionsListView(client: client, showingAddSession: $showingAddSession)
-                        .padding(.horizontal, cardPadding)
+                        .transition(.opacity)
                 }
+                
                 if isEditing {
                     DeleteButton(action: { showingDeleteAlert = true })
                 }
@@ -89,19 +87,10 @@ struct ClientDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar { toolbarContent }
-        .alert("Delete Client", isPresented: $showingDeleteAlert) {
-            Button("Delete", role: .destructive) {
-                Task {
-                    await deleteClient()
-                }
-            }
+        .confirmationDialog("Change Profile Picture", isPresented: $showingActionSheet) {
+            Button("Take Photo") { showingCamera = true }
+            Button("Choose from Library") { showingImagePicker = true }
             Button("Cancel", role: .cancel) { }
-        }
-        .sheet(isPresented: $showingAddSession) {
-            AddSessionView(client: client)
-        }
-        .sheet(isPresented: $showingNutritionView) {
-            NutritionView(client: client)
         }
         .sheet(isPresented: $showingImagePicker) {
             ImagePicker(
@@ -125,9 +114,31 @@ struct ClientDetailView: View {
                     UIApplication.shared.open(settingsUrl)
                 }
             })
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) { }
         } message: {
             Text(alertMessage)
+        }
+        .alert("Delete Client", isPresented: $showingDeleteAlert) {
+            Button("Delete", role: .destructive) {
+                Task {
+                    await deleteClient()
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        }
+        .sheet(isPresented: $showingAddSession) {
+            AddSessionView(client: client)
+        }
+        .overlay {
+            if showingNutritionView {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        showingNutritionView = false
+                    }
+                
+                NutritionView(isPresented: $showingNutritionView, client: client)
+            }
         }
         .task {
             await fetchClientData()
@@ -137,6 +148,15 @@ struct ClientDetailView: View {
         }
         .refreshable {
             await fetchClientData()
+        }
+        .onChange(of: selectedImage) { _, newImage in
+            if let image = newImage {
+                print("ClientDetailView: New image selected, updating UI")
+                // Update the client image immediately for preview
+                editedClientImage = "preview"  // This will trigger the preview mode
+                // Store the image for later upload
+                selectedImage = image
+            }
         }
     }
     
@@ -149,48 +169,74 @@ struct ClientDetailView: View {
     
     private var clientDetailsCard: some View {
         VStack(spacing: 12) {
-            VStack(spacing: 16) {
-                ZStack {
-                    if !client.clientImage.isEmpty {
-                        ClientImageView(imageUrl: client.clientImage, size: 100)
-                            .overlay(Circle().stroke(Color.gray.opacity(0.2), lineWidth: 1))
-                            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-                    } else {
-                        Image(systemName: "person.crop.circle.fill")
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 100, height: 100)
-                            .foregroundColor(.gray.opacity(0.3))
-                    }
-                    
+            // Profile Image and Name Section
+            HStack(alignment: .top, spacing: contentSpacing * 2) {
+                // Left side - Profile Image
+                Button(action: { 
                     if isEditing {
-                        Button(action: { showingActionSheet = true }) {
-                            Circle()
-                                .fill(Colors.nasmBlue)
-                                .frame(width: 32, height: 32)
-                                .overlay(
-                                    Image(systemName: "camera.fill")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(.white)
-                                )
-                                .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
-                        }
-                        .offset(x: 35, y: 35)
+                        showingActionSheet = true
                     }
+                }) {
+                    ZStack {
+                        if !client.clientImage.isEmpty && editedClientImage != "preview" {
+                            ClientImageView(imageUrl: client.clientImage, size: 80)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                                )
+                                .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                        } else if editedClientImage == "preview", let previewImage = selectedImage {
+                            // Show the selected image immediately
+                            Image(uiImage: previewImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 80, height: 80)
+                                .clipShape(Circle())
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                                )
+                                .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                        } else {
+                            Image(systemName: "person.crop.circle.fill")
+                                .resizable()
+                                .frame(width: 80, height: 80)
+                                .foregroundColor(.gray.opacity(0.3))
+                        }
+                        
+                        if isEditing {
+                            Button(action: { showingActionSheet = true }) {
+                                Image(systemName: "camera")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(Colors.nasmBlue)
+                                    .padding(7)
+                                    .background(Color.white)
+                                    .clipShape(Circle())
+                                    .shadow(color: .gray.opacity(0.3), radius: 4, x: 0, y: 2)
+                                    .offset(x: 26, y: 26)
+                            }
+                        }
+                    }
+                    .frame(width: minimumTapTarget, height: minimumTapTarget)
+                    .padding(.top, 7)
+                    .padding(.leading, 7)
                 }
+                .disabled(!isEditing)
                 
-                VStack(alignment: .center, spacing: 16) {
+                // Right side - Name and Metrics
+                VStack(alignment: .leading, spacing: 16) {
                     if isEditing {
                         TextField("Name", text: $editedName)
                             .font(.title2.bold())
                             .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .multilineTextAlignment(.center)
                     } else {
                         Text(client.name)
                             .font(.title2.bold())
                             .foregroundColor(.primary)
+                            .padding(.top, -5)
                     }
                     
+                    // Metrics in horizontal layout
                     HStack(spacing: contentSpacing) {
                         MetricView(
                             title: "Age",
@@ -198,12 +244,14 @@ struct ClientDetailView: View {
                             unit: "years",
                             isEditing: isEditing
                         )
+                        
                         MetricView(
                             title: "Height",
                             value: isEditing ? $editedHeight : .constant(String(format: "%.0f", client.height)),
                             unit: "cm",
                             isEditing: isEditing
                         )
+                        
                         MetricView(
                             title: "Weight",
                             value: isEditing ? $editedWeight : .constant(String(format: "%.0f", client.weight)),
@@ -212,22 +260,62 @@ struct ClientDetailView: View {
                         )
                     }
                 }
+                .padding(.top, -5)
             }
             .padding(.horizontal, cardPadding)
             .padding(.top, cardPadding)
+            .padding(.bottom, 8)
             
-            VStack(alignment: .leading, spacing: 12) {
-                InfoSection(
-                    title: "Medical History",
-                    text: isEditing ? $editedMedicalHistory : .constant(client.medicalHistory),
-                    isEditing: isEditing
-                )
+            // Medical History and Goals with Nutrition Note
+            HStack(alignment: .top, spacing: contentSpacing) {
+                // Info Sections
+                VStack(alignment: .leading, spacing: 12) {
+                    InfoSection(
+                        title: "Medical History",
+                        text: isEditing ? $editedMedicalHistory : .constant(client.medicalHistory),
+                        isEditing: isEditing
+                    )
+                    
+                    InfoSection(
+                        title: "Goals",
+                        text: isEditing ? $editedGoals : .constant(client.goals),
+                        isEditing: isEditing
+                    )
+                }
+                .frame(maxWidth: .infinity)
                 
-                InfoSection(
-                    title: "Goals",
-                    text: isEditing ? $editedGoals : .constant(client.goals),
-                    isEditing: isEditing
-                )
+                // Nutrition Note Button
+                if !isEditing {
+                    Button(action: { showingNutritionView = true }) {
+                        VStack(spacing: 4) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.white)
+                                    .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
+                                    .frame(width: 70, height: 90)
+                                
+                                VStack(spacing: 8) {
+                                    Circle()
+                                        .fill(Colors.nasmBlue.opacity(0.1))
+                                        .frame(width: 48, height: 48)
+                                        .overlay(
+                                            Image(systemName: "doc.plaintext.fill")
+                                                .font(.system(size: 24))
+                                                .foregroundColor(Colors.nasmBlue)
+                                        )
+                                    
+                                    Text("Nutrition")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(Colors.nasmBlue)
+                                }
+                            }
+                        }
+                        .frame(width: 70)
+                        .frame(height: 100)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(ScaleButtonStyle())
+                }
             }
             .padding(.horizontal, cardPadding)
             .padding(.bottom, cardPadding)
@@ -235,11 +323,6 @@ struct ClientDetailView: View {
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         .shadow(color: .black.opacity(0.05), radius: shadowRadius, x: 0, y: 4)
-        .confirmationDialog("Change Profile Picture", isPresented: $showingActionSheet) {
-            Button("Take Photo") { showingCamera = true }
-            Button("Choose from Library") { showingImagePicker = true }
-            Button("Cancel", role: .cancel) { }
-        }
     }
     
     private struct DeleteButton: View {
@@ -265,38 +348,35 @@ struct ClientDetailView: View {
     // MARK: - Helper Views
     private var toolbarContent: some ToolbarContent {
         Group {
-            if !showingNutritionNote {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { dismiss() }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                                .fontWeight(.semibold)
-                            Text("Back")
-                                .fontWeight(.semibold)
-                        }
-                        .foregroundColor(Colors.nasmBlue)
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: { dismiss() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Back")
+                            .font(.system(size: 16, weight: .semibold))
                     }
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(isEditing ? "Save" : "Edit") {
-                        if isEditing {
-                            Task {
-                                await saveChanges()
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    isEditing.toggle()
-                                }
-                            }
-                        } else {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                startEditing()
-                                isEditing.toggle()
-                            }
-                        }
-                    }
-                    .fontWeight(.semibold)
                     .foregroundColor(Colors.nasmBlue)
                 }
+                .disabled(showingNutritionView)
+            }
+            
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: {
+                    if isEditing {
+                        Task {
+                            await saveChanges()
+                        }
+                    } else {
+                        startEditing()
+                    }
+                    isEditing.toggle()
+                }) {
+                    Text(isEditing ? "Save" : "Edit")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(Colors.nasmBlue)
+                }
+                .disabled(showingNutritionView)
             }
         }
     }
@@ -311,6 +391,24 @@ struct ClientDetailView: View {
         editedClientImage = client.clientImage
     }
     
+    private func processImageForUpload(_ image: UIImage) -> Data? {
+        // Calculate target size (20% of original)
+        let scale = 0.2
+        let targetSize = CGSize(
+            width: image.size.width * scale,
+            height: image.size.height * scale
+        )
+        
+        // Resize image
+        UIGraphicsBeginImageContextWithOptions(targetSize, false, 1.0)
+        image.draw(in: CGRect(origin: .zero, size: targetSize))
+        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        
+        // Compress to JPEG with moderate compression
+        return resizedImage?.jpegData(compressionQuality: 0.7)
+    }
+    
     private func saveChanges() async {
         do {
             var updatedClient = client
@@ -320,11 +418,19 @@ struct ClientDetailView: View {
             updatedClient.weight = Double(editedWeight) ?? client.weight
             updatedClient.medicalHistory = editedMedicalHistory
             updatedClient.goals = editedGoals
-            updatedClient.clientImage = editedClientImage
             
+            // If there's a new image selected, process and upload it first
+            if let newImage = selectedImage,
+               let processedImageData = processImageForUpload(newImage) {
+                let imageUrl = try await APIClient.shared.uploadImage(processedImageData)
+                updatedClient.clientImage = imageUrl
+            }
+            
+            // Update the client with all changes
             try await dataManager.updateClient(updatedClient)
             
             await MainActor.run {
+                selectedImage = nil
                 NotificationCenter.default.post(
                     name: NSNotification.Name("RefreshClientData"),
                     object: nil,
@@ -371,9 +477,8 @@ struct ClientDetailView: View {
     private func fetchClientData() async {
         isLoadingSessions = true
         do {
-            async let sessionsFetch = dataManager.fetchClientSessions(for: client)
-            async let nutritionFetch = dataManager.fetchNutrition(for: client)
-            try await (sessionsFetch, nutritionFetch)
+            try await dataManager.fetchClientSessions(for: client)
+            try await dataManager.fetchNutrition(for: client)
         } catch {
             print("Error fetching client data:", error)
         }
@@ -446,29 +551,8 @@ struct ClientDetailView: View {
     }
     
     private func uploadImage(_ image: UIImage) {
-        Task {
-            do {
-                if let imageData = image.jpegData(compressionQuality: 0.7) {
-                    let imageUrl = try await APIClient.shared.uploadImage(imageData)
-                    // Update client with new image URL
-                    var updatedClient = client
-                    updatedClient.clientImage = imageUrl
-                    try await dataManager.updateClient(updatedClient)
-                    // Refresh client data
-                    NotificationCenter.default.post(
-                        name: NSNotification.Name("RefreshClientData"),
-                        object: nil,
-                        userInfo: ["clientId": client._id]
-                    )
-                }
-            } catch {
-                print("Error uploading image:", error)
-                await MainActor.run {
-                    self.error = handleError(error)
-                    showingError = true
-                }
-            }
-        }
+        selectedImage = image  // Store the selected image
+        // The actual upload will happen in saveChanges() when "Done" is tapped
     }
 }
 

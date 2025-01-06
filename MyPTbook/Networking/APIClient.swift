@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 enum APIError: Error {
     case invalidURL
@@ -14,9 +15,9 @@ class APIClient {
     static let shared = APIClient()
     #if DEBUG
     // Make sure this IP matches your computer's local IP address
-    private let baseURL = "http://localhost:5001/api"  // or use your IP address
+    private let baseURL = "http://192.168.70.108:5001/api"  // For the device
     #else
-    private let baseURL = "your_production_url"
+    private let baseURL = "http://localhost:5001/api"  // For simulator
     #endif
     
     // Add network configuration
@@ -31,93 +32,15 @@ class APIClient {
     // MARK: - Auth Endpoints
     
     func login(email: String, password: String) async throws -> LoginResponse {
+        print("APIClient: Attempting login for email:", email)
         let url = URL(string: "\(baseURL)/user/login")!
         let body = ["email": email.lowercased(), "password": password]
         
-        print("Making login request to:", url)
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let encoder = JSONEncoder()
-        let jsonData = try encoder.encode(body)
-        request.httpBody = jsonData
-        
-        print("Request body:", String(data: jsonData, encoding: .utf8) ?? "")
-        
-        do {
-            let (data, response) = try await session.data(for: request)
-            print("Received response")
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("Invalid response type")
-                throw APIError.networkError(NSError(domain: "", code: -1))
-            }
-            
-            print("Response status code:", httpResponse.statusCode)
-            print("Response headers:", httpResponse.allHeaderFields)
-            let responseString = String(data: data, encoding: .utf8) ?? ""
-            print("Response data:", responseString)
-            
-            switch httpResponse.statusCode {
-            case 200...299:
-                let decoder = JSONDecoder()
-                do {
-                    // Try to decode with pretty printing for debugging
-                    if let json = try? JSONSerialization.jsonObject(with: data),
-                       let prettyData = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted),
-                       let prettyString = String(data: prettyData, encoding: .utf8) {
-                        print("Formatted JSON response:\n\(prettyString)")
-                    }
-                    
-                    let response = try decoder.decode(LoginResponse.self, from: data)
-                    print("Successfully decoded response:", response)
-                    return response
-                } catch {
-                    print("Decoding error:", error)
-                    if let decodingError = error as? DecodingError {
-                        switch decodingError {
-                        case .keyNotFound(let key, let context):
-                            print("Key '\(key)' not found:", context.debugDescription)
-                            print("Coding path:", context.codingPath)
-                        case .typeMismatch(let type, let context):
-                            print("Type '\(type)' mismatch:", context.debugDescription)
-                            print("Coding path:", context.codingPath)
-                        case .valueNotFound(let type, let context):
-                            print("Value of type '\(type)' not found:", context.debugDescription)
-                            print("Coding path:", context.codingPath)
-                        case .dataCorrupted(let context):
-                            print("Data corrupted:", context.debugDescription)
-                            print("Coding path:", context.codingPath)
-                        @unknown default:
-                            print("Unknown decoding error:", error)
-                        }
-                    }
-                    throw APIError.decodingError
-                }
-            case 401:
-                print("Unauthorized")
-                throw APIError.unauthorized
-            case 400:
-                if let errorResponse = try? JSONDecoder().decode(ValidationErrorResponse.self, from: data) {
-                    print("Validation error:", errorResponse.message)
-                    throw APIError.validationError([errorResponse.message])
-                }
-                print("Invalid request")
-                throw APIError.serverError("Invalid request")
-            default:
-                if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
-                    print("Server error:", errorResponse.message)
-                    throw APIError.serverError(errorResponse.message)
-                }
-                print("Unknown server error")
-                throw APIError.serverError("Server error: \(httpResponse.statusCode)")
-            }
-        } catch {
-            print("Network error details:", error.localizedDescription)
-            throw error
-        }
+        print("APIClient: Making login request to:", url)
+        let response: LoginResponse = try await post(url: url, body: body)
+        print("APIClient: Login successful - User:", response.user.name)
+        print("APIClient: Profile image URL:", response.user.profileImage ?? "none")
+        return response
     }
     
     func register(name: String, email: String, password: String) async throws -> LoginResponse {
@@ -801,6 +724,8 @@ class APIClient {
     }
     
     func uploadImage(_ imageData: Data) async throws -> String {
+        print("APIClient: Starting image upload to Cloudinary...")
+        // Use the same endpoint that works for client images
         let url = URL(string: "\(baseURL)/client/upload-image")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -814,6 +739,7 @@ class APIClient {
         
         // Create multipart form data
         var body = Data()
+        print("APIClient: Creating multipart form data...")
         
         // Add image data
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
@@ -827,10 +753,11 @@ class APIClient {
         
         request.httpBody = body
         
-        print("APIClient: Uploading image...")
+        print("APIClient: Sending image upload request...")
         let (data, response) = try await session.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
+            print("APIClient: Invalid response type")
             throw APIError.networkError(NSError(domain: "", code: -1))
         }
         
@@ -846,9 +773,66 @@ class APIClient {
             print("APIClient: Image uploaded successfully:", result.imageUrl)
             return result.imageUrl
         case 401:
+            print("APIClient: Unauthorized upload attempt")
             throw APIError.unauthorized
         default:
+            print("APIClient: Upload failed with status code:", httpResponse.statusCode)
             throw APIError.serverError("Upload failed: \(httpResponse.statusCode)")
+        }
+    }
+    
+    func uploadUserProfileImage(_ image: UIImage) async throws -> String {
+        guard let imageData = image.jpegData(compressionQuality: 0.7) else {
+            throw APIError.serverError("Could not process image")
+        }
+        
+        // Use the existing image upload endpoint that connects to Cloudinary
+        return try await uploadImage(imageData)
+    }
+    
+    func updateUserProfileWithImage(name: String, profileImage: String) async throws -> UserResponse {
+        let url = URL(string: "\(baseURL)/user/profile")!
+        let body = [
+            "name": name,
+            "userImage": profileImage  // Changed from profileImage to userImage to match backend
+        ]
+        return try await put(url: url, body: body)
+    }
+    
+    func updateExercise(exerciseId: String, exerciseData: [String: Any]) async throws -> Exercise {
+        let url = URL(string: "\(baseURL)/exercise/\(exerciseId)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = DataManager.shared.getAuthToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        let jsonData = try JSONSerialization.data(withJSONObject: exerciseData)
+        request.httpBody = jsonData
+        
+        print("APIClient: Updating exercise with data:", String(data: jsonData, encoding: .utf8) ?? "")
+        let (data, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.networkError(NSError(domain: "", code: -1))
+        }
+        
+        print("APIClient: Response status code:", httpResponse.statusCode)
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("APIClient: Raw response:", responseString)
+        }
+        
+        switch httpResponse.statusCode {
+        case 200...299:
+            let decoder = JSONDecoder()
+            let updatedExercise = try decoder.decode(Exercise.self, from: data)
+            print("APIClient: Exercise updated successfully")
+            return updatedExercise
+        case 401:
+            throw APIError.unauthorized
+        default:
+            throw APIError.serverError("Server error: \(httpResponse.statusCode)")
         }
     }
 }
@@ -863,11 +847,13 @@ struct UserResponse: Codable {
     let id: String
     let name: String
     let email: String
+    let profileImage: String?
     
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey {
         case id
         case name
         case email
+        case profileImage = "userImage"  // Match the backend field name
     }
 }
 

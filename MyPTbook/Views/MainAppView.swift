@@ -23,22 +23,38 @@ struct MainAppView: View {
                         Spacer()
                         
                         Button(action: { showingProfile = true }) {
-                            Image(systemName: "person.crop.circle.fill")
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 80, height: 80)
-                                .foregroundColor(.gray.opacity(0.5))
-                                .clipShape(Circle())
+                            if let profileUrl = dataManager.userProfileImageUrl, !profileUrl.isEmpty {
+                                ProfileImageView(imageUrl: profileUrl, size: 80)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color.gray.opacity(0.5), lineWidth: 1)
+                                    )
+                            } else {
+                                Image(systemName: "person.circle.fill")
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 80, height: 80)
+                                    .foregroundColor(.gray)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color.gray.opacity(0.5), lineWidth: 1)
+                                    )
+                            }
                         }
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 16)
                     .padding(.bottom, 8)
                     
-                    // Clients Grid
-                    LazyVGrid(columns: [
-                        GridItem(.adaptive(minimum: 128, maximum: 128), spacing: 16)
-                    ], spacing: 16) {
+                    // Clients Grid - Updated to three columns
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.flexible(), spacing: 16),
+                            GridItem(.flexible(), spacing: 16),
+                            GridItem(.flexible(), spacing: 16)
+                        ],
+                        spacing: 16
+                    ) {
                         // Add Client button
                         Button(action: { showingAddClient = true }) {
                             VStack(spacing: 12) {
@@ -62,7 +78,7 @@ struct MainAppView: View {
                             ClientCard(client: client, dataManager: dataManager)
                         }
                     }
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, 16)
                 }
                 .padding(.top, 4)
                 .padding(.bottom, 16)

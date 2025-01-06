@@ -16,7 +16,10 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    userImage: { type: String },
+    userImage: {
+        type: String,
+        default: ''
+    },
     resetPasswordToken: { type: String },
     resetPasswordExpires: { type: Date },
 }, { timestamps: true });
@@ -44,6 +47,14 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
         throw error;
     }
 };
+
+userSchema.post('find', function(docs) {
+    console.log('User find result:', docs);
+});
+
+userSchema.post('findOne', function(doc) {
+    console.log('User findOne result:', doc);
+});
 
 const User = mongoose.model('User', userSchema);
 export default User; 
