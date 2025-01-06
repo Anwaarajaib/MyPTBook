@@ -34,13 +34,21 @@ export const getSessionsByClient = async (req, res) => {
 export const getSessionById = async (req, res) => {
     try {
         const sessionId = req.params.sessionId;
-        const session = await Session.findById(sessionId).populate('exercises');
+        const session = await Session.findById(sessionId)
+            .populate('exercises')
+            .lean();
+            
         if (!session) {
             return res.status(404).json({ message: 'Session not found' });
         }
+        
         res.status(200).json(session);
     } catch (error) {
-        res.status(500).json({ message: 'Error retrieving session', error });
+        console.error('Error in getSessionById:', error);
+        res.status(500).json({ 
+            message: 'Error retrieving session', 
+            error: error.message 
+        });
     }
 };
 

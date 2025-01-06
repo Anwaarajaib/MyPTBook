@@ -313,9 +313,24 @@ struct SessionDetailView: View {
     private var toolbarItems: some ToolbarContent {
         Group {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: { showingDeleteAlert = true }) {
-                    Image(systemName: "trash")
-                        .foregroundColor(.red)
+                HStack {
+                    if isLoading {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    } else {
+                        Button(action: {
+                            Task {
+                                await fetchExercises()
+                            }
+                        }) {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                    }
+                    
+                    Button(action: { showingDeleteAlert = true }) {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                    }
                 }
             }
         }
@@ -323,21 +338,44 @@ struct SessionDetailView: View {
     
     private func fetchExercises() async {
         isLoading = true
+        error = nil  // Reset error state
+        
         do {
-            exercises = try await dataManager.getSessionExercises(sessionId: session._id)
+            // Add retry logic
+            let maxRetries = 3
+            var currentTry = 0
+            var lastError: Error? = nil
             
-            // Initialize the state arrays with the fetched data
-            await MainActor.run {
-                exerciseNames = exercises.map { $0.exerciseName }
-                exerciseSets = exercises.map { String($0.sets) }
-                exerciseReps = exercises.map { String($0.reps) }
-                isLoading = false
+            while currentTry < maxRetries {
+                do {
+                    exercises = try await dataManager.getSessionExercises(sessionId: session._id)
+                    
+                    // Initialize the state arrays with the fetched data
+                    await MainActor.run {
+                        exerciseNames = exercises.map { $0.exerciseName }
+                        exerciseSets = exercises.map { String($0.sets) }
+                        exerciseReps = exercises.map { String($0.reps) }
+                        isLoading = false
+                    }
+                    return  // Success, exit the function
+                } catch {
+                    lastError = error
+                    currentTry += 1
+                    if currentTry < maxRetries {
+                        try await Task.sleep(nanoseconds: 1_000_000_000)  // Wait 1 second before retry
+                    }
+                }
             }
+            
+            // If we get here, all retries failed
+            throw lastError ?? NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unknown error"])
+            
         } catch {
             await MainActor.run {
-                self.error = "Failed to load exercises"
+                self.error = "Failed to load exercises: \(error.localizedDescription)"
                 showingError = true
                 isLoading = false
+                print("Exercise fetch error:", error)  // Debug logging
             }
         }
     }

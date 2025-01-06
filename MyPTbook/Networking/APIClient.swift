@@ -15,7 +15,7 @@ class APIClient {
     static let shared = APIClient()
     #if DEBUG
     // Make sure this IP matches your computer's local IP address
-    private let baseURL = "http://192.168.70.108:5001/api"  // For the device
+    private let baseURL = "https://my-pt-book-phi.vercel.app/api"  // For the device
     #else
     private let baseURL = "http://localhost:5001/api"  // For simulator
     #endif

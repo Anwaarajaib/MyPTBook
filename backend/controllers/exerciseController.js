@@ -30,13 +30,21 @@ export const createExercise = async (req, res) => {
 export const getExercisesBySession = async (req, res) => {
     try {
         const sessionId = req.params.sessionId;
-        const exercises = await Exercise.find({ session: sessionId });
+        const exercises = await Exercise.find({ session: sessionId })
+            .lean()
+            .sort({ createdAt: 1 });
+            
         if (!exercises) {
             return res.status(404).json({ message: 'No exercises found for this session' });
         }
+        
         res.status(200).json(exercises);
     } catch (error) {
-        res.status(500).json({ message: 'Error retrieving exercises', error });
+        console.error('Error in getExercisesBySession:', error);
+        res.status(500).json({ 
+            message: 'Error retrieving exercises', 
+            error: error.message 
+        });
     }
 };
 
