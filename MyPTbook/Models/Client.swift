@@ -9,12 +9,12 @@ struct Client: Codable, Identifiable {
     var medicalHistory: String
     var goals: String
     var clientImage: String
-    var user: String?
+    var userId: String?
     var sessions: [Session]?
     
     var id: String { _id }
     
-    init(name: String, age: Int, height: Double, weight: Double, medicalHistory: String, goals: String, clientImage: String, user: String? = nil) {
+    init(name: String, age: Int, height: Double, weight: Double, medicalHistory: String, goals: String, clientImage: String, userId: String? = nil) {
         self._id = UUID().uuidString
         self.name = name
         self.age = age
@@ -23,7 +23,7 @@ struct Client: Codable, Identifiable {
         self.medicalHistory = medicalHistory
         self.goals = goals
         self.clientImage = clientImage
-        self.user = user
+        self.userId = userId
         self.sessions = nil
     }
     
@@ -36,7 +36,7 @@ struct Client: Codable, Identifiable {
         case medicalHistory
         case goals
         case clientImage
-        case user
+        case userId
         case sessions
     }
 }

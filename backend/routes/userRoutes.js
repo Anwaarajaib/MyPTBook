@@ -7,8 +7,13 @@ const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 router.post('/login', (req, res, next) => {
-    console.log('Received login request:', req.body);
-    login(req, res).catch(next);
+    console.log('Login route hit');
+    console.log('Request body:', req.body);
+    console.log('Headers:', req.headers);
+    login(req, res).catch((error) => {
+        console.error('Login route error:', error);
+        next(error);
+    });
 });
 router.post('/register', register);
 router.route('/profile').get(Protect, getProfile).put(Protect, updateProfile);

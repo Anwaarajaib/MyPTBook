@@ -9,6 +9,7 @@ struct Exercise: Codable, Identifiable, Equatable {
     var weight: Double
     var time: Int?
     var groupType: GroupType?
+    var groupId: String?
     var session: String
     
     enum GroupType: String, Codable {
@@ -17,7 +18,7 @@ struct Exercise: Codable, Identifiable, Equatable {
     }
     
     private enum CodingKeys: String, CodingKey {
-        case _id, exerciseName, sets, reps, weight, time, groupType, session
+        case _id, exerciseName, sets, reps, weight, time, groupType, groupId, session
     }
     
     init(_id: String = "",
@@ -27,6 +28,7 @@ struct Exercise: Codable, Identifiable, Equatable {
          weight: Double,
          time: Int? = nil,
          groupType: GroupType? = nil,
+         groupId: String? = nil,
          session: String = "") {
         self._id = _id
         self.exerciseName = exerciseName
@@ -35,6 +37,7 @@ struct Exercise: Codable, Identifiable, Equatable {
         self.weight = weight
         self.time = time
         self.groupType = groupType
+        self.groupId = groupId
         self.session = session
     }
     

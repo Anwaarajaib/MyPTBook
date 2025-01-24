@@ -10,6 +10,8 @@ struct UserProfileView: View {
     @State private var showingImagePicker = false
     @State private var showingCamera = false
     @State private var showingActionSheet = false
+    @State private var showingPopover = false
+    @State private var popoverAnchor: CGPoint = .zero
     @State private var selectedImage: UIImage?
     @State private var profileImage: Image?
     @State private var profileImageUrl: String?
@@ -27,10 +29,12 @@ struct UserProfileView: View {
             .navigationTitle("User Profile")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
-            .confirmationDialog("Change Profile Picture", isPresented: $showingActionSheet) {
-                Button("Take Photo") { showingCamera = true }
-                Button("Choose Photo") { showingImagePicker = true }
-                Button("Cancel", role: .cancel) { }
+            .if(!DesignSystem.isIPad) { view in
+                view.confirmationDialog("Change Profile Picture", isPresented: $showingActionSheet) {
+                    Button("Take Photo") { showingCamera = true }
+                    Button("Choose from Library") { showingImagePicker = true }
+                    Button("Cancel", role: .cancel) { }
+                }
             }
             .sheet(isPresented: $showingImagePicker) {
                 ImagePicker(
@@ -113,43 +117,82 @@ struct UserProfileView: View {
     
     private var profileImageSection: some View {
         ZStack {
-            if let profileImage = profileImage {
-                profileImage
+            if let profileImage = selectedImage {
+                Image(uiImage: profileImage)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(width: 110, height: 110)
+                    .frame(width: 100, height: 100)
                     .clipShape(Circle())
                     .overlay(Circle().stroke(Color.gray.opacity(0.2), lineWidth: 1))
-                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-            } else {
-                Circle()
-                    .fill(Color.gray.opacity(0.1))
-                    .frame(width: 110, height: 110)
-                    .overlay(
-                        Image(systemName: "person.fill")
+                    .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+            } else if let imageUrl = dataManager.userProfileImageUrl {
+                AsyncImage(url: URL(string: imageUrl)) { phase in
+                    switch phase {
+                    case .empty:
+                        fallbackImageView
+                    case .success(let image):
+                        image
                             .resizable()
-                            .scaledToFit()
-                            .frame(width: 45, height: 45)
-                            .foregroundColor(Color.gray.opacity(0.5))
-                    )
-                    .overlay(
-                        Circle()
-                            .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 100, height: 100)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Color.gray.opacity(0.2), lineWidth: 1))
+                            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                    case .failure:
+                        fallbackImageView
+                    @unknown default:
+                        fallbackImageView
+                    }
+                }
+            } else {
+                fallbackImageView
             }
             
-            if isEditing {
-                Button(action: { showingActionSheet = true }) {
-                    Image(systemName: "camera")
-                        .font(.system(size: 18))
-                        .foregroundColor(Colors.nasmBlue)
-                        .padding(7)
-                        .background(Color.white)
-                        .clipShape(Circle())
-                        .shadow(color: .gray.opacity(0.3), radius: 4, x: 0, y: 2)
-                        .offset(x: 35, y: 35)
+            Button(action: {
+                if DesignSystem.isIPad {
+                    showingPopover = true
+                } else {
+                    showingActionSheet = true
                 }
+            }) {
+                Image(systemName: "camera")
+                    .font(.system(size: 18))
+                    .foregroundColor(Colors.nasmBlue)
+                    .padding(7)
+                    .background(Color.white)
+                    .clipShape(Circle())
+                    .shadow(color: .gray.opacity(0.3), radius: 4, x: 0, y: 2)
+            }
+            .offset(x: 35, y: 35)
+            .popover(isPresented: $showingPopover,
+                     attachmentAnchor: .point(.topTrailing),
+                     arrowEdge: .leading) {
+                VStack(spacing: 0) {
+                    Button(action: { 
+                        showingPopover = false
+                        showingCamera = true 
+                    }) {
+                        Text("Take Photo")
+                            .font(.system(size: 17))
+                            .foregroundColor(.blue)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    
+                    Divider()
+                    
+                    Button(action: { 
+                        showingPopover = false
+                        showingImagePicker = true 
+                    }) {
+                        Text("Choose from Library")
+                            .font(.system(size: 17))
+                            .foregroundColor(.blue)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                }
+                .frame(width: 200)
             }
         }
     }
@@ -294,6 +337,9 @@ struct UserProfileView: View {
                     name: NSNotification.Name("RefreshUserProfile"),
                     object: nil
                 )
+                
+                // Dismiss the view after successful update
+                dismiss()
             }
         } catch {
             print("UserProfileView: Error updating profile:", error)
@@ -412,6 +458,24 @@ struct UserProfileView: View {
         profileImage = Image(uiImage: image)
         print("handleImageSelection: UI updated immediately with new image")
     }
+    
+    private var fallbackImageView: some View {
+        Circle()
+            .fill(Color.gray.opacity(0.1))
+            .frame(width: 100, height: 100)
+            .overlay(
+                Image(systemName: "person.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 45, height: 45)
+                    .foregroundColor(Color.gray.opacity(0.5))
+            )
+            .overlay(
+                Circle()
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+    }
 }
 
 // Helper view for info rows
@@ -441,5 +505,15 @@ private struct InfoRow: View {
             Spacer()
         }
         .padding(.vertical, 4)
+    }
+}
+
+extension View {
+    @ViewBuilder func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
     }
 }

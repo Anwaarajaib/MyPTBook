@@ -1,5 +1,31 @@
 import SwiftUI
 
+private enum ExerciseMetricType {
+    case reps, time
+}
+
+private let weightsStorageKey = "session_weights_"
+
+private enum ExerciseType {
+    case single, superset, circuit
+    
+    var icon: String {
+        switch self {
+        case .single: return "figure.strengthtraining.traditional"
+        case .superset: return "arrow.triangle.2.circlepath"
+        case .circuit: return "arrow.3.trianglepath"
+        }
+    }
+    
+    var title: String {
+        switch self {
+        case .single: return "Exercise"
+        case .superset: return "Superset"
+        case .circuit: return "Circuit"
+        }
+    }
+}
+
 struct SessionDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var dataManager = DataManager.shared
@@ -18,6 +44,14 @@ struct SessionDetailView: View {
     @State private var exerciseReps: [String] = []
     @FocusState private var focusedSetsField: Int?
     @FocusState private var focusedRepsField: Int?
+    @State private var exerciseMetricTypes: [ExerciseMetricType] = []
+    @State private var exerciseWeights: [[String]] = []
+    @FocusState private var focusedWeightField: Int?
+    @State private var selectedExerciseType: ExerciseType = .single
+    
+    public init(session: Session) {
+        self.session = session
+    }
     
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -45,6 +79,11 @@ struct SessionDetailView: View {
                 .padding(.vertical)
             }
             .background(Colors.background)
+            .onTapGesture {
+                focusedWeightField = nil  // Dismiss keyboard
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                              to: nil, from: nil, for: nil)
+            }
             
             // Fixed bottom buttons
             if !session.isCompleted {
@@ -55,9 +94,12 @@ struct SessionDetailView: View {
         }
         .navigationTitle("Session Details")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
         .toolbar {
-            toolbarItems
+            toolbarContent
         }
+        .toolbarBackground(Colors.background)
+        .toolbarColorScheme(.light)
         .alert("Delete Session", isPresented: $showingDeleteAlert) {
             Button("Delete", role: .destructive) {
                 deleteSession()
@@ -93,46 +135,49 @@ struct SessionDetailView: View {
         VStack(spacing: 0) {
             ForEach(Array(exercises.enumerated()), id: \.element.id) { index, exercise in
                 VStack(spacing: 0) {
+                    // Show group header if this is the first exercise in a group
                     if let groupType = exercise.groupType,
                        isFirstInGroup(at: index) {
-                        HStack(alignment: .center, spacing: 8) {
-                            Text("\(displayNumber(for: index)).")
-                                .font(.body.bold())
-                                .frame(width: 30, alignment: .leading)
-                            
-                            GroupTypeHeader(
-                                type: groupType,
-                                sets: exercise.sets,
-                                isEditing: isEditing,
-                                setsText: Binding(
-                                    get: { 
-                                        guard index < exerciseSets.count else { return "" }
-                                        return exerciseSets[index]
-                                    },
-                                    set: { newValue in
-                                        guard index < exerciseSets.count else { return }
-                                        // Update sets for all exercises in the group
-                                        var currentIndex = index
-                                        while currentIndex < exercises.count &&
-                                              exercises[currentIndex].groupType == groupType {
-                                            exerciseSets[currentIndex] = newValue
-                                            currentIndex += 1
-                                        }
+                        GroupTypeHeader(
+                            type: groupType,
+                            sets: exercise.sets,
+                            isEditing: isEditing,
+                            displayNumber: displayNumber(for: index),
+                            setsText: Binding(
+                                get: { 
+                                    guard index < exerciseSets.count else { return "" }
+                                    return exerciseSets[index]
+                                },
+                                set: { newValue in
+                                    guard index < exerciseSets.count else { return }
+                                    // Update sets for all exercises in the group
+                                    var currentIndex = index
+                                    while currentIndex < exercises.count &&
+                                          exercises[currentIndex].groupId == exercise.groupId {  // Compare groupId instead of groupType
+                                        exerciseSets[currentIndex] = newValue
+                                        currentIndex += 1
                                     }
-                                )
+                                }
                             )
-                            
-                            Spacer()
-                        }
+                        )
                         .padding(.horizontal, 20)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 4)
                     }
                     
                     exerciseRow(exercise: exercise, index: index)
                         .padding(.horizontal, 20)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, exercise.groupType != nil ? 4 : 8)
                     
-                    if index < exercises.count - 1 {
+                    // Show divider if:
+                    // 1. Not the last exercise AND
+                    // 2. Either:
+                    //    a. Current exercise has no group OR
+                    //    b. Next exercise has no group OR
+                    //    c. Current and next exercises have different groupIds
+                    if index < exercises.count - 1 &&
+                        (exercise.groupType == nil ||
+                         exercises[index + 1].groupType == nil ||
+                         exercise.groupId != exercises[index + 1].groupId) {
                         Divider()
                             .padding(.horizontal, 20)
                     }
@@ -141,20 +186,64 @@ struct SessionDetailView: View {
             
             // Add this new button when in editing mode
             if isEditing {
-                Button(action: addNewExercise) {
-                    HStack {
-                        Image(systemName: "plus.circle.fill")
-                        Text("Add Exercise")
+                VStack(spacing: 12) {
+                    // Exercise Type Picker
+                    HStack(spacing: 0) {
+                        ForEach([ExerciseType.single, .superset, .circuit], id: \.self) { type in
+                            Button(action: { selectedExerciseType = type }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: type.icon)
+                                        .imageScale(.small)
+                                    Text(type.title)
+                                        .font(.footnote.bold())
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(selectedExerciseType == type ? Colors.nasmBlue : Color.clear)
+                                .foregroundColor(selectedExerciseType == type ? .white : Colors.nasmBlue)
+                            }
+                            
+                            // Add divider after first and second buttons
+                            if type != .circuit {
+                                Divider()
+                                    .background(Colors.nasmBlue)  // Match the border color
+                            }
+                        }
                     }
-                    .foregroundColor(Colors.nasmBlue)
-                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Colors.nasmBlue, lineWidth: 1)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .padding(.horizontal, 20)
+                    
+                    // Add Exercise Button
+                    Button(action: {
+                        Task {
+                            switch selectedExerciseType {
+                            case .single:
+                                await addNewExercise()
+                            case .superset:
+                                await addNewExerciseGroup(.superset)
+                            case .circuit:
+                                await addNewExerciseGroup(.circuit)
+                            }
+                        }
+                    }) {
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                            Text("Add \(selectedExerciseType.title)")
+                        }
+                        .foregroundColor(Colors.nasmBlue)
+                        .padding(.vertical, 12)
+                    }
                 }
             }
         }
     }
     
     private func exerciseRow(exercise: Exercise, index: Int) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: isEditing ? 6 : 2) {
             // Exercise Name Row
             HStack(alignment: .center, spacing: 8) {
                 // Only show number for single exercises (not in a group)
@@ -183,10 +272,20 @@ struct SessionDetailView: View {
                             }
                         
                         Button(action: {
-                            if exercises.count > 1 {
-                                Task {
-                                    do {
-                                        // Delete from backend immediately
+                            Task {
+                                do {
+                                    // If it's a new exercise (has UUID), just remove from local state
+                                    if exercise._id.count == 36 {
+                                        await MainActor.run {
+                                            exercises.remove(at: index)
+                                            exerciseNames.remove(at: index)
+                                            exerciseSets.remove(at: index)
+                                            exerciseReps.remove(at: index)
+                                            exerciseMetricTypes.remove(at: index)
+                                            exerciseWeights.remove(at: index)
+                                        }
+                                    } else {
+                                        // Delete from backend if it's an existing exercise
                                         try await dataManager.deleteExercise(exercises[index])
                                         
                                         // Update local state
@@ -195,11 +294,13 @@ struct SessionDetailView: View {
                                             exerciseNames.remove(at: index)
                                             exerciseSets.remove(at: index)
                                             exerciseReps.remove(at: index)
+                                            exerciseMetricTypes.remove(at: index)
+                                            exerciseWeights.remove(at: index)
                                         }
-                                    } catch {
-                                        self.error = "Failed to delete exercise"
-                                        showingError = true
                                     }
+                                } catch {
+                                    self.error = "Failed to delete exercise: \(error.localizedDescription)"
+                                    showingError = true
                                 }
                             }
                         }) {
@@ -209,16 +310,24 @@ struct SessionDetailView: View {
                         }
                     }
                 } else {
-                    Text(exercise.exerciseName)
-                        .font(.body.bold())
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 4) {
+                        if exercise.groupType != nil {
+                            // Bullet point next to name for grouped exercises
+                            Image(systemName: "circle.fill")
+                                .font(.system(size: 6))
+                                .foregroundColor(.primary.opacity(0.6))
+                        }
+                        Text(exercise.exerciseName)
+                            .font(.body.bold())
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             
             if exercise.groupType == nil {
-                // Show both sets and reps for single exercises
-                HStack(spacing: 24) {
-                    // Sets
+                // Show either reps or time based on what's set
+                HStack(spacing: DesignSystem.adaptiveSpacing) {
+                    // Sets for single exercises
                     HStack(spacing: 8) {
                         Image(systemName: "square.stack.3d.up.fill")
                             .foregroundColor(Colors.nasmBlue)
@@ -244,9 +353,11 @@ struct SessionDetailView: View {
                         }
                     }
                     
-                    // Reps
+                    // Reps/Time Input
                     HStack(spacing: 8) {
-                        Image(systemName: "figure.strengthtraining.traditional")
+                        Image(systemName: index < exerciseMetricTypes.count ? 
+                              (exerciseMetricTypes[index] == .reps ? "figure.strengthtraining.traditional" : "clock") :
+                              "figure.strengthtraining.traditional")
                             .foregroundColor(Colors.nasmBlue)
                             .imageScale(.large)
                         
@@ -257,25 +368,79 @@ struct SessionDetailView: View {
                                 .font(.body.bold())
                                 .keyboardType(.numberPad)
                                 .multilineTextAlignment(.center)
-                                .focused($focusedRepsField, equals: index)
                                 .overlay(
-                                    Text("Reps")
+                                    Text(index < exerciseMetricTypes.count ? 
+                                         (exerciseMetricTypes[index] == .reps ? "Reps" : "Sec") : "Reps")
                                         .font(.body.bold())
                                         .foregroundColor(Color(.placeholderText))
-                                        .opacity(exerciseReps[index].isEmpty && focusedRepsField != index ? 1 : 0)
+                                        .opacity(exerciseReps[index].isEmpty ? 1 : 0)
                                 )
+                            
+                            // Type selector
+                            HStack(spacing: 0) {
+                                ForEach([ExerciseMetricType.reps, .time], id: \.self) { type in
+                                    Button(action: {
+                                        // Ensure the array is large enough
+                                        while exerciseMetricTypes.count <= index {
+                                            exerciseMetricTypes.append(.reps)  // Default to reps
+                                        }
+                                        exerciseMetricTypes[index] = type
+                                        
+                                        // Update the exercise immediately when switching type
+                                        var updatedExercise = exercises[index]
+                                        let value = Int(exerciseReps[index]) ?? 0
+                                        if type == .reps {
+                                            updatedExercise.reps = value
+                                            updatedExercise.time = nil
+                                        } else {
+                                            updatedExercise.time = value
+                                            updatedExercise.reps = 0
+                                        }
+                                        exercises[index] = updatedExercise
+                                        
+                                        // Save changes
+                                        Task {
+                                            do {
+                                                let updated = try await dataManager.updateExercise(updatedExercise)
+                                                await MainActor.run {
+                                                    exercises[index] = updated
+                                                }
+                                            } catch {
+                                                print("Failed to update exercise type: \(error)")
+                                            }
+                                        }
+                                    }) {
+                                        Text(type == .reps ? "Reps" : "Time")
+                                            .font(.footnote.bold())
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 8)
+                                            .background(index < exerciseMetricTypes.count && 
+                                                      exerciseMetricTypes[index] == type ? Colors.nasmBlue : Color.clear)
+                                            .foregroundColor(index < exerciseMetricTypes.count && 
+                                                   exerciseMetricTypes[index] == type ? .white : Colors.nasmBlue)
+                                    }
+                                }
+                            }
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Colors.nasmBlue, lineWidth: 1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .frame(width: 120)
                         } else {
-                            Text("\(exercise.reps) reps")
+                            Text(exercise.time == nil ? 
+                                "\(exercise.reps) reps" : 
+                                "\(exercise.time ?? 0) sec")
                                 .font(.body.bold())
                         }
                     }
                     
                     Spacer()
                 }
-                .padding(.leading, 30)
+                .padding(.vertical, isEditing ? 2 : 0)
             } else {
                 // Only show reps for grouped exercises
-                HStack(spacing: 24) {
+                HStack(spacing: DesignSystem.adaptiveSpacing) {
                     // Reps only
                     HStack(spacing: 8) {
                         Image(systemName: "figure.strengthtraining.traditional")
@@ -304,33 +469,107 @@ struct SessionDetailView: View {
                     
                     Spacer()
                 }
-                .padding(.leading, 30)
+                .adaptivePadding(.horizontal, 20)
             }
-        }
-        .padding(.vertical, isEditing ? 4 : 8)
-    }
-    
-    private var toolbarItems: some ToolbarContent {
-        Group {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                HStack {
-                    if isLoading {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    } else {
-                        Button(action: {
-                            Task {
-                                await fetchExercises()
+            
+            if !isEditing && index < exerciseWeights.count {
+                // Performance Boxes for weight tracking
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(0..<exercise.sets, id: \.self) { setIndex in
+                            if setIndex < exerciseWeights[index].count {
+                                ZStack(alignment: .center) {
+                                    if exerciseWeights[index][setIndex].isEmpty && 
+                                       focusedWeightField != (index * 1000 + setIndex) {
+                                        Text(ordinalNumber(setIndex))
+                                            .font(.caption.bold())
+                                            .foregroundColor(.gray)
+                                    }
+                                    
+                                    TextField("", text: Binding(
+                                        get: { exerciseWeights[index][setIndex] },
+                                        set: { newValue in
+                                            if index < exerciseWeights.count && setIndex < exerciseWeights[index].count {
+                                                exerciseWeights[index][setIndex] = newValue
+                                                // Save to UserDefaults
+                                                if let encodedData = try? JSONEncoder().encode(exerciseWeights) {
+                                                    UserDefaults.standard.set(encodedData, forKey: "\(weightsStorageKey)\(session._id)")
+                                                }
+                                            }
+                                        }
+                                    ))
+                                    .focused($focusedWeightField, equals: (index * 1000 + setIndex))
+                                    .multilineTextAlignment(.center)
+                                    .textFieldStyle(PlainTextFieldStyle())
+                                    .onSubmit {
+                                        focusedWeightField = nil  // Dismiss keyboard when done
+                                        saveChanges()
+                                    }
+                                }
+                                .frame(width: 40, height: 28)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color.white)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .stroke(Colors.nasmBlue.opacity(0.2), lineWidth: 1)
+                                        )
+                                )
+                                .font(.footnote.bold())
+                                .keyboardType(.decimalPad)
+                                
+                                Text("kg")
+                                    .font(.body.bold())
+                                    .foregroundColor(.primary)
                             }
-                        }) {
-                            Image(systemName: "arrow.clockwise")
                         }
                     }
-                    
-                    Button(action: { showingDeleteAlert = true }) {
-                        Image(systemName: "trash")
-                            .foregroundColor(.red)
+                    .padding(.leading, 30)
+                    .padding(.top, 4)
+                }
+            }
+            
+            if isEditing,
+               let groupType = exercise.groupType,
+               groupType == .circuit,
+               isLastInGroup(at: index) {
+                Button(action: {
+                    Task {
+                        await addExerciseToCircuit(afterIndex: index)
                     }
+                }) {
+                    HStack {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Add to Circuit")
+                            .font(.footnote.bold())
+                    }
+                    .foregroundColor(Colors.nasmBlue)
+                    .padding(.top, 8)
+                }
+            }
+        }
+        .padding(.vertical, isEditing ? 2 : 0)
+    }
+    
+    private var toolbarContent: some ToolbarContent {
+        Group {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: { dismiss() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: DesignSystem.isIPad ? 18 : 16, weight: .semibold))
+                        Text("Back")
+                            .font(DesignSystem.adaptiveFont(size: DesignSystem.isIPad ? 18 : 16, weight: .semibold))
+                    }
+                    .foregroundColor(Colors.nasmBlue)
+                }
+            }
+            
+            // Add delete button
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: { showingDeleteAlert = true }) {
+                    Image(systemName: "trash")
+                        .foregroundColor(.red)
                 }
             }
         }
@@ -341,7 +580,6 @@ struct SessionDetailView: View {
         error = nil  // Reset error state
         
         do {
-            // Add retry logic
             let maxRetries = 3
             var currentTry = 0
             var lastError: Error? = nil
@@ -354,20 +592,39 @@ struct SessionDetailView: View {
                     await MainActor.run {
                         exerciseNames = exercises.map { $0.exerciseName }
                         exerciseSets = exercises.map { String($0.sets) }
-                        exerciseReps = exercises.map { String($0.reps) }
+                        exerciseReps = exercises.map { exercise in 
+                            if let time = exercise.time {
+                                return String(time)
+                            } else {
+                                return String(exercise.reps)
+                            }
+                        }
+                        // Initialize metric types array with the same size as exercises
+                        exerciseMetricTypes = exercises.map { $0.time != nil ? .time : .reps }
+                        
+                        // Load saved weights from UserDefaults
+                        if let savedData = UserDefaults.standard.data(forKey: "\(weightsStorageKey)\(session._id)"),
+                           let loadedWeights = try? JSONDecoder().decode([[String]].self, from: savedData) {
+                            exerciseWeights = loadedWeights
+                        } else {
+                            // Initialize empty weights if none saved
+                            exerciseWeights = exercises.map { exercise in
+                                Array(repeating: "", count: max(1, exercise.sets))
+                            }
+                        }
+                        
                         isLoading = false
                     }
-                    return  // Success, exit the function
+                    return
                 } catch {
                     lastError = error
                     currentTry += 1
                     if currentTry < maxRetries {
-                        try await Task.sleep(nanoseconds: 1_000_000_000)  // Wait 1 second before retry
+                        try await Task.sleep(nanoseconds: 1_000_000_000)
                     }
                 }
             }
             
-            // If we get here, all retries failed
             throw lastError ?? NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unknown error"])
             
         } catch {
@@ -375,7 +632,7 @@ struct SessionDetailView: View {
                 self.error = "Failed to load exercises: \(error.localizedDescription)"
                 showingError = true
                 isLoading = false
-                print("Exercise fetch error:", error)  // Debug logging
+                print("Exercise fetch error:", error)
             }
         }
     }
@@ -386,10 +643,17 @@ struct SessionDetailView: View {
                 try await dataManager.deleteExercise(exercise)
                 await MainActor.run {
                     exercises.removeAll { $0._id == exercise._id }
+                    if let index = exercises.firstIndex(where: { $0._id == exercise._id }) {
+                        exerciseNames.remove(at: index)
+                        exerciseSets.remove(at: index)
+                        exerciseReps.remove(at: index)
+                        exerciseMetricTypes.remove(at: index)
+                        exerciseWeights.remove(at: index)
+                    }
                 }
             } catch {
                 await MainActor.run {
-                    self.error = "Failed to delete exercise"
+                    self.error = "Failed to delete exercise: \(error.localizedDescription)"
                     showingError = true
                 }
             }
@@ -608,9 +872,10 @@ struct SessionDetailView: View {
         }
     }
     
-    private func addNewExercise() {
+    private func addNewExercise() async {
+        // Add to local state only, don't create in backend yet
         let newExercise = Exercise(
-            _id: "",
+            _id: UUID().uuidString,  // Temporary ID for local tracking
             exerciseName: "",
             sets: 0,
             reps: 0,
@@ -620,11 +885,13 @@ struct SessionDetailView: View {
             session: session._id
         )
         
-        withAnimation {
+        await MainActor.run {
             exercises.append(newExercise)
             exerciseNames.append("")
             exerciseSets.append("")
             exerciseReps.append("")
+            exerciseMetricTypes.append(.reps)
+            exerciseWeights.append([])
         }
     }
     
@@ -638,29 +905,46 @@ struct SessionDetailView: View {
                 
                 // 2. Process all exercises
                 for (index, exercise) in exercises.enumerated() {
-                    if exercise._id.isEmpty {  // New exercise
-                        if !exerciseNames[index].isEmpty && 
-                           Int(exerciseSets[index]) ?? 0 > 0 &&
-                           Int(exerciseReps[index]) ?? 0 > 0 {
-                            
-                            let newExercise = Exercise(
-                                _id: "",
-                                exerciseName: exerciseNames[index],
-                                sets: Int(exerciseSets[index]) ?? 0,
-                                reps: Int(exerciseReps[index]) ?? 0,
-                                weight: 0,
-                                time: nil,
-                                groupType: nil,
-                                session: session._id
-                            )
-                            
-                            _ = try await dataManager.createExercise(exercise: newExercise)
-                        }
+                    guard index < exerciseNames.count && index < exerciseSets.count && 
+                          index < exerciseReps.count && index < exerciseMetricTypes.count else {
+                        continue
+                    }
+                    
+                    // Validate exercise data
+                    guard !exerciseNames[index].isEmpty,
+                          let sets = Int(exerciseSets[index]), sets > 0,
+                          let value = Int(exerciseReps[index]), value > 0 else {
+                        continue
+                    }
+                    
+                    let isTimeBasedExercise = exerciseMetricTypes[index] == .time
+                    
+                    if exercise._id.count == 36 {  // New exercise (UUID length is 36)
+                        let newExercise = Exercise(
+                            _id: "",
+                            exerciseName: exerciseNames[index],
+                            sets: sets,
+                            reps: isTimeBasedExercise ? 0 : value,
+                            weight: 0,
+                            time: isTimeBasedExercise ? value : nil,
+                            groupType: exercise.groupType,
+                            groupId: exercise.groupId,
+                            session: session._id
+                        )
+                        
+                        _ = try await dataManager.createExercise(exercise: newExercise)
                     } else {  // Existing exercise
                         var updatedExercise = exercise
                         updatedExercise.exerciseName = exerciseNames[index]
-                        updatedExercise.sets = Int(exerciseSets[index]) ?? exercise.sets
-                        updatedExercise.reps = Int(exerciseReps[index]) ?? exercise.reps
+                        updatedExercise.sets = sets
+                        
+                        if isTimeBasedExercise {
+                            updatedExercise.reps = 0
+                            updatedExercise.time = value
+                        } else {
+                            updatedExercise.reps = value
+                            updatedExercise.time = nil
+                        }
                         
                         _ = try await dataManager.updateExercise(updatedExercise)
                     }
@@ -678,29 +962,65 @@ struct SessionDetailView: View {
                 }
             } catch {
                 await MainActor.run {
-                    self.error = "Failed to save changes"
+                    self.error = "Failed to save changes: \(error.localizedDescription)"
                     showingError = true
                 }
             }
         }
     }
     
-    // Add this helper function to determine if an exercise is the first in its group
+    // Update the isFirstInGroup helper to use groupId
     private func isFirstInGroup(at index: Int) -> Bool {
         guard index > 0 else { return true }
-        let currentType = exercises[index].groupType
-        let previousType = exercises[index - 1].groupType
-        return currentType != previousType
+        let currentExercise = exercises[index]
+        let previousExercise = exercises[index - 1]
+        
+        // If current exercise has no group type, it's the start of a new section
+        guard let currentGroupType = currentExercise.groupType else {
+            return true
+        }
+        
+        // If previous exercise has no group type or different groupId, this is the start of a new group
+        return previousExercise.groupType != currentGroupType ||
+               currentExercise.groupId != previousExercise.groupId
     }
     
-    // Add this helper function to get the display number for an exercise
+    // Update the isLastInGroup helper to use groupId
+    private func isLastInGroup(at index: Int) -> Bool {
+        guard index < exercises.count - 1 else { return true }
+        let currentExercise = exercises[index]
+        let nextExercise = exercises[index + 1]
+        
+        // If current exercise has no group type, it's a single exercise
+        guard let currentGroupType = currentExercise.groupType else {
+            return true
+        }
+        
+        // If next exercise has no group type or different groupId, this is the end of the group
+        return nextExercise.groupType != currentGroupType ||
+               currentExercise.groupId != nextExercise.groupId
+    }
+    
+    // Update the displayNumber function
     private func displayNumber(for index: Int) -> Int {
-        var number = 1
-        for i in 0..<index {
-            if isFirstInGroup(at: i) {
+        var number = 0  // Start from 0 since we'll increment before returning
+        
+        for i in 0...index {  // Include the current index
+            if i == index {  // When we reach our target index
+                number += 1  // Always increment for the current item
+                break
+            }
+            
+            if exercises[i].groupType == nil {
+                // For single exercises
+                number += 1
+            } else if i == 0 || // First exercise in array
+                      exercises[i].groupId != exercises[i-1].groupId { // New group (different groupId)
+                // Increment for the start of any new group, regardless of type
                 number += 1
             }
         }
+        
         return number
     }
     
@@ -709,48 +1029,112 @@ struct SessionDetailView: View {
         let type: Exercise.GroupType
         let sets: Int
         var isEditing: Bool
+        let displayNumber: Int
         @Binding var setsText: String
         
         var body: some View {
-            HStack(spacing: 6) {
-                // Group type indicator
-                HStack(spacing: 6) {
-                    Image(systemName: type == .superset ? "arrow.triangle.2.circlepath" : "arrow.3.trianglepath")
-                        .imageScale(.large)
-                    Text(type == .superset ? "Superset" : "Circuit")
-                        .font(.headline)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Colors.nasmBlue.opacity(0.1))
-                .cornerRadius(6)
-                .foregroundColor(.primary)
+            HStack(alignment: .center, spacing: 8) {
+                // Exercise number
+                Text("\(displayNumber).")
+                    .font(.body.bold())
+                    .frame(width: 30, alignment: .leading)
                 
-                // Sets display/input
-                HStack(spacing: 8) {
-                    Image(systemName: "square.stack.3d.up.fill")
-                        .foregroundColor(Colors.nasmBlue)
-                        .imageScale(.large)
+                // Group type indicator and sets
+                HStack(spacing: 6) {
+                    // Group type indicator
+                    HStack(spacing: 6) {
+                        Image(systemName: type == .superset ? "arrow.triangle.2.circlepath" : "arrow.3.trianglepath")
+                            .imageScale(.large)
+                        Text(type == .superset ? "Superset" : "Circuit")
+                            .font(.headline)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Colors.nasmBlue.opacity(0.1))
+                    .cornerRadius(6)
+                    .foregroundColor(.primary)
                     
-                    if isEditing {
-                        TextField("", text: $setsText)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .frame(width: 60, height: 32)
-                            .font(.body.bold())
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.center)
-                            .overlay(
-                                Text("Sets")
-                                    .font(.body.bold())
-                                    .foregroundColor(Color(.placeholderText))
-                                    .opacity(setsText.isEmpty ? 1 : 0)
-                            )
-                    } else if sets > 0 {
-                        Text("\(sets) sets")
-                            .font(.body.bold())
+                    // Sets display/input
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.stack.3d.up.fill")
+                            .foregroundColor(Colors.nasmBlue)
+                            .imageScale(.large)
+                        
+                        if isEditing {
+                            TextField("", text: $setsText)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .frame(width: 60, height: 32)
+                                .font(.body.bold())
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.center)
+                                .overlay(
+                                    Text("Sets")
+                                        .font(.body.bold())
+                                        .foregroundColor(Color(.placeholderText))
+                                        .opacity(setsText.isEmpty ? 1 : 0)
+                                )
+                        } else if sets > 0 {
+                            Text("\(sets) sets")
+                                .font(.body.bold())
+                        }
                     }
                 }
+                
+                Spacer()
             }
+        }
+    }
+    
+    private func addNewExerciseGroup(_ groupType: Exercise.GroupType) async {
+        let groupId = UUID().uuidString
+        let count = groupType == .superset ? 2 : 3
+        
+        await MainActor.run {
+            for _ in 0..<count {
+                let newExercise = Exercise(
+                    _id: UUID().uuidString,  // Temporary ID for local tracking
+                    exerciseName: "",
+                    sets: 0,
+                    reps: 0,
+                    weight: 0,
+                    time: nil,
+                    groupType: groupType,
+                    groupId: groupId,
+                    session: session._id
+                )
+                
+                exercises.append(newExercise)
+                exerciseNames.append("")
+                exerciseSets.append("")
+                exerciseReps.append("")
+                exerciseMetricTypes.append(.reps)
+                exerciseWeights.append([])
+            }
+        }
+    }
+    
+    private func addExerciseToCircuit(afterIndex: Int) async {
+        let groupId = exercises[afterIndex].groupId
+        
+        let newExercise = Exercise(
+            _id: UUID().uuidString,  // Temporary ID for local tracking
+            exerciseName: "",
+            sets: exercises[afterIndex].sets,
+            reps: 0,
+            weight: 0,
+            time: nil,
+            groupType: .circuit,
+            groupId: groupId,
+            session: session._id
+        )
+        
+        await MainActor.run {
+            exercises.insert(newExercise, at: afterIndex + 1)
+            exerciseNames.insert("", at: afterIndex + 1)
+            exerciseSets.insert(String(exercises[afterIndex].sets), at: afterIndex + 1)
+            exerciseReps.insert("", at: afterIndex + 1)
+            exerciseMetricTypes.insert(.reps, at: afterIndex + 1)
+            exerciseWeights.insert([], at: afterIndex + 1)
         }
     }
 }

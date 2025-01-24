@@ -70,8 +70,8 @@ class APIClient {
             }
             throw APIError.serverError("Invalid request")
         default:
-            if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
-                throw APIError.serverError(errorResponse.message)
+            if (try? JSONDecoder().decode(ErrorResponse.self, from: data)) != nil {
+                throw APIError.serverError("Server error: \(httpResponse.statusCode)")
             }
             throw APIError.serverError("Server error: \(httpResponse.statusCode)")
         }
@@ -153,7 +153,7 @@ class APIClient {
             let medicalHistory: String
             let goals: String
             let clientImage: String
-            let userId: String  // Changed from user to userId to match backend
+            let userId: String  // Keep this as userId
         }
         
         // Create the request body
@@ -165,13 +165,14 @@ class APIClient {
             medicalHistory: client.medicalHistory,
             goals: client.goals,
             clientImage: client.clientImage,
-            userId: client.user ?? ""  // Use the user field as userId
+            userId: client.userId ?? ""  // Use userId instead of user
         )
         
+        print("APIClient: Creating client with request body:", requestBody)
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(requestBody)
         
-        print("APIClient: Sending request to create client with userId:", client.user ?? "no user")
+        print("APIClient: Sending request to create client with userId:", client.userId ?? "no user")
         let (data, response) = try await session.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -370,6 +371,7 @@ class APIClient {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         
+        // Make sure exerciseData includes groupId if it exists
         let jsonData = try JSONSerialization.data(withJSONObject: exerciseData)
         request.httpBody = jsonData
         
@@ -808,6 +810,7 @@ class APIClient {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         
+        // Make sure exerciseData includes groupId if it exists
         let jsonData = try JSONSerialization.data(withJSONObject: exerciseData)
         request.httpBody = jsonData
         

@@ -3,7 +3,6 @@ import SwiftUI
 // MARK: - Main Application View
 struct MainAppView: View {
     @StateObject private var dataManager = DataManager.shared
-    @State private var showingAddClient = false
     @State private var showingProfile = false
     @State private var userName: String = "Default Name"
     @State private var userProfileImage: UIImage? = nil
@@ -17,14 +16,14 @@ struct MainAppView: View {
                     // Header
                     HStack {
                         Text(dataManager.userName)
-                            .font(.system(size: 24, weight: .semibold))
+                            .font(DesignSystem.adaptiveFont(size: DesignSystem.isIPad ? 28 : 24, weight: .semibold))
                             .foregroundColor(.primary)
                         
                         Spacer()
                         
                         Button(action: { showingProfile = true }) {
                             if let profileUrl = dataManager.userProfileImageUrl, !profileUrl.isEmpty {
-                                ProfileImageView(imageUrl: profileUrl, size: 80)
+                                ProfileImageView(imageUrl: profileUrl, size: DesignSystem.isIPad ? 100 : 80)
                                     .overlay(
                                         Circle()
                                             .stroke(Color.gray.opacity(0.5), lineWidth: 1)
@@ -33,7 +32,8 @@ struct MainAppView: View {
                                 Image(systemName: "person.circle.fill")
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
-                                    .frame(width: 80, height: 80)
+                                    .adaptiveFrame(width: DesignSystem.isIPad ? 100 : 80, 
+                                                 height: DesignSystem.isIPad ? 100 : 80)
                                     .foregroundColor(.gray)
                                     .overlay(
                                         Circle()
@@ -42,32 +42,37 @@ struct MainAppView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 16)
-                    .padding(.bottom, 8)
+                    .adaptivePadding(.horizontal, DesignSystem.isIPad ? 40 : 24)
+                    .adaptivePadding(.top, DesignSystem.isIPad ? 16 : 8)
+                    .adaptivePadding(.bottom, DesignSystem.isIPad ? 8 : 4)
                     
-                    // Clients Grid - Updated to three columns
+                    // Clients Grid
                     LazyVGrid(
-                        columns: [
-                            GridItem(.flexible(), spacing: 16),
-                            GridItem(.flexible(), spacing: 16),
-                            GridItem(.flexible(), spacing: 16)
-                        ],
-                        spacing: 16
+                        columns: DesignSystem.gridColumns,
+                        spacing: DesignSystem.gridSpacing
                     ) {
                         // Add Client button
-                        Button(action: { showingAddClient = true }) {
-                            VStack(spacing: 12) {
+                        NavigationLink {
+                            AddClientView(dataManager: dataManager)
+                        } label: {
+                            VStack(spacing: DesignSystem.adaptiveSize(8)) {
+                                Spacer()
+                                    .frame(height: DesignSystem.adaptiveSize(16))
+                                
                                 Image(systemName: "person.badge.plus")
-                                    .font(.system(size: 30))
+                                    .font(.system(size: DesignSystem.adaptiveSize(30)))
                                     .foregroundColor(Colors.nasmBlue)
                                 Text("Add Client")
-                                    .font(.headline)
+                                    .font(DesignSystem.adaptiveFont(size: 17, weight: .semibold))
                                     .foregroundColor(Colors.nasmBlue)
+                                
+                                Spacer()
+                                    .frame(height: DesignSystem.adaptiveSize(8))
                             }
-                            .padding(.vertical, 34)
-                            .padding(.horizontal, 20)
-                            .frame(width: 128, height: 128)
+                            .adaptivePadding(.vertical, 20)
+                            .adaptivePadding(.horizontal, 20)
+                            .adaptiveFrame(width: DesignSystem.maxCardWidth, 
+                                         height: DesignSystem.maxCardWidth)
                             .background(Color.white)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                             .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
@@ -78,10 +83,11 @@ struct MainAppView: View {
                             ClientCard(client: client, dataManager: dataManager)
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .adaptivePadding(.horizontal, DesignSystem.isIPad ? 32 : 16)
+                    .adaptivePadding(.vertical, DesignSystem.isIPad ? 8 : 4)
                 }
-                .padding(.top, 4)
-                .padding(.bottom, 16)
+                .adaptivePadding(.top, 0)
+                .adaptivePadding(.bottom, DesignSystem.isIPad ? 16 : 8)
             }
             .background(Colors.background)
             .task {
@@ -89,9 +95,6 @@ struct MainAppView: View {
             }
             .refreshable {
                 await fetchClients()
-            }
-            .sheet(isPresented: $showingAddClient) {
-                AddClientView(dataManager: dataManager)
             }
             .sheet(isPresented: $showingProfile) {
                 UserProfileView()

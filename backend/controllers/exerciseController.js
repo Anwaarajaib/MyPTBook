@@ -3,7 +3,7 @@ import Session from '../models/Session.js';
 
 export const createExercise = async (req, res) => {
     try {
-        const { exerciseName, sets, reps, weight, time, groupType, session } = req.body;
+        const { exerciseName, sets, reps, weight, time, groupType, groupId, session } = req.body;
         const foundSession = await Session.findById(session);
         if (!foundSession) {
             return res.status(404).json({ message: 'Session not found' });
@@ -15,6 +15,7 @@ export const createExercise = async (req, res) => {
             weight,
             time,
             groupType,
+            groupId,
             session
         });
         const savedExercise = await exercise.save();
@@ -64,10 +65,10 @@ export const getExerciseById = async (req, res) => {
 export const updateExercise = async (req, res) => {
     try {
         const exerciseId = req.params.exerciseId;
-        const { exerciseName, sets, reps, weight, time, groupType } = req.body;
+        const { exerciseName, sets, reps, weight, time, groupType, groupId } = req.body;
         const exercise = await Exercise.findByIdAndUpdate(
             exerciseId,
-            { exerciseName, sets, reps, weight, time, groupType },
+            { exerciseName, sets, reps, weight, time, groupType, groupId },
             { new: true }
         );
         if (!exercise) {

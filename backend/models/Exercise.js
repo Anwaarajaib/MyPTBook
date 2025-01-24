@@ -7,6 +7,7 @@ const ExerciseSchema = new mongoose.Schema({
     weight: { type: Number },
     time: { type: Number },
     groupType: { type: String, enum: ['superset', 'circuit'], default: null },
+    groupId: { type: String },
     session: { type: mongoose.Schema.Types.ObjectId, ref: 'Session', required: true },
 });
 

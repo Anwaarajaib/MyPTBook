@@ -10,14 +10,15 @@ struct UserProfileHeader: View {
     var body: some View {
         Button(action: { showingProfile = true }) {
             HStack {
-                ProfileImageView(imageUrl: dataManager.userProfileImageUrl, size: 40)
+                ProfileImageView(imageUrl: dataManager.userProfileImageUrl, 
+                               size: DesignSystem.isIPad ? 80 : 40)
                 
                 Text(dataManager.userName)
-                    .font(.title2.bold())
+                    .font(DesignSystem.adaptiveFont(size: DesignSystem.isIPad ? 24 : 20, weight: .bold))
                 
                 Spacer()
             }
-            .padding()
+            .adaptivePadding(.all, DesignSystem.isIPad ? 24 : 16)
             .background(Colors.background)
         }
         .buttonStyle(.plain)
@@ -40,14 +41,15 @@ struct UserProfileHeader: View {
     }
     
     private func refreshProfile() async {
+        guard !isLoadingProfile else { return }  // Prevent multiple simultaneous refreshes
+        
         do {
             isLoadingProfile = true
             let profile = try await APIClient.shared.getProfile()
-            print("UserProfileHeader: Got profile response with image:", profile.profileImage ?? "none")
             
+            // Batch UI updates together
             await MainActor.run {
                 if let imageUrl = profile.profileImage {
-                    print("UserProfileHeader: Saving profile image URL:", imageUrl)
                     dataManager.saveProfileImageUrl(imageUrl)
                 }
                 isLoadingProfile = false
@@ -66,41 +68,34 @@ struct ClientCard: View {
     let client: Client
     @ObservedObject var dataManager: DataManager
     
+    private let imageCache = NSCache<NSString, UIImage>()
+    
     var body: some View {
         NavigationLink(destination: ClientDetailView(dataManager: dataManager, client: client)) {
-            VStack(spacing: 16) {
+            VStack(spacing: DesignSystem.adaptiveSize(8)) {
+                Spacer()
+                    .frame(height: DesignSystem.adaptiveSize(16))
+                
                 // Profile Image Section
                 if !client.clientImage.isEmpty {
-                    AsyncImage(url: URL(string: client.clientImage)) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 80, height: 80)
-                                .clipShape(Circle())
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                                )
-                                .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-                        case .failure, .empty:
-                            fallbackImageView
-                        @unknown default:
-                            fallbackImageView
-                        }
-                    }
+                    loadImage(from: client.clientImage)
                 } else {
                     fallbackImageView
                 }
                 
                 Text(client.name)
-                    .font(.headline)
+                    .font(DesignSystem.adaptiveFont(size: 17, weight: .semibold))
                     .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                
+                Spacer()
+                    .frame(height: DesignSystem.adaptiveSize(8))
             }
-            .padding(.vertical, 34)
-            .padding(.horizontal, 20)
-            .frame(width: 128, height: 128)
+            .adaptivePadding(.vertical, 20)
+            .adaptivePadding(.horizontal, 20)
+            .adaptiveFrame(width: DesignSystem.maxCardWidth,
+                          height: DesignSystem.maxCardWidth)
             .background(Color.white)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
@@ -110,12 +105,13 @@ struct ClientCard: View {
     private var fallbackImageView: some View {
         Circle()
             .fill(Color.gray.opacity(0.1))
-            .frame(width: 80, height: 80)
+            .adaptiveFrame(width: DesignSystem.maxImageSize,
+                          height: DesignSystem.maxImageSize)
             .overlay(
                 Image(systemName: "person.fill")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 35, height: 35)
+                    .adaptiveFrame(width: DesignSystem.maxImageSize * 0.45, height: DesignSystem.maxImageSize * 0.45)
                     .foregroundColor(Color.gray.opacity(0.5))
             )
             .overlay(
@@ -123,6 +119,41 @@ struct ClientCard: View {
                     .stroke(Color.gray.opacity(0.2), lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+    }
+    
+    private func loadImage(from url: String) -> some View {
+        AsyncImage(url: URL(string: url)) { phase in
+            switch phase {
+            case .success(let image):
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .adaptiveFrame(width: DesignSystem.maxImageSize,
+                                 height: DesignSystem.maxImageSize)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(Color.gray.opacity(0.2), lineWidth: 1))
+                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+                    .onAppear {
+                        // Cache the image synchronously since asUIImage() is not async
+                        if let uiImage = image.asUIImage() {
+                            imageCache.setObject(uiImage, forKey: url as NSString)
+                        }
+                    }
+            case .failure, .empty:
+                if let cachedImage = imageCache.object(forKey: url as NSString) {
+                    Image(uiImage: cachedImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .adaptiveFrame(width: DesignSystem.maxImageSize,
+                                     height: DesignSystem.maxImageSize)
+                        .clipShape(Circle())
+                } else {
+                    fallbackImageView
+                }
+            @unknown default:
+                fallbackImageView
+            }
+        }
     }
 }
 
@@ -134,12 +165,17 @@ struct SessionListCard: View {
     let onAddTapped: () -> Void
     let client: Client
     @ObservedObject var dataManager = DataManager.shared
+    @State private var isLoading = false
     
     var sortedSessions: [Session] {
-        // Sort sessions and add numbers
+        // Sort sessions and add sequential numbers
         sessions.enumerated().map { (index, session) in
             var numberedSession = session
-            numberedSession.sessionNumber = index + 1  // Add session number
+            // For completed sessions, start from 1
+            // For active sessions, continue from where completed sessions left off
+            let baseNumber = title == "Active Sessions" ? 
+                (client.sessions?.filter { $0.isCompleted }.count ?? 0) : 0
+            numberedSession.sessionNumber = baseNumber + index + 1
             return numberedSession
         }
     }
@@ -151,13 +187,21 @@ struct SessionListCard: View {
                     .font(.headline)
                 Spacer()
                 if showAddButton {
-                    if !sessions.isEmpty {
+                    if !client.sessions.isNilOrEmpty {
                         Button(action: shareSessionsPDF) {
-                            Image(systemName: "square.and.arrow.up")
-                                .foregroundColor(Colors.nasmBlue)
-                                .font(.system(size: 20))
-                                .padding(.horizontal, 8)
+                            if isLoading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                    .scaleEffect(0.8)
+                            } else {
+                                Image(systemName: "square.and.arrow.up")
+                                    .foregroundColor(Colors.nasmBlue)
+                                    .font(.system(size: 20))
+                            }
                         }
+                        .disabled(isLoading)
+                        .frame(width: 44)
+                        .padding(.horizontal, 8)
                     }
                     Button(action: onAddTapped) {
                         Image(systemName: "plus.circle.fill")
@@ -172,12 +216,13 @@ struct SessionListCard: View {
                     .foregroundColor(.gray)
                     .padding(.vertical, 12)
             } else {
-                VStack(spacing: 0) {
+                LazyVStack(spacing: 0) {
                     ForEach(sortedSessions) { session in
                         NavigationLink {
                             SessionDetailView(session: session)
                         } label: {
                             SessionRowView(session: session)
+                                .id(session.id)
                         }
                         .buttonStyle(PlainButtonStyle())
                         .background(Color.white)
@@ -198,33 +243,76 @@ struct SessionListCard: View {
     }
     
     private func shareSessionsPDF() {
-        if let pdfData = PDFGenerator.generateSessionsPDF(clientName: client.name, sessions: sessions) {
-            let fileName = "MyPTbook_\(client.name.replacingOccurrences(of: " ", with: "_"))_Sessions.pdf"
-            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-            
+        Task {
             do {
-                try pdfData.write(to: tempURL)
-                let activityVC = UIActivityViewController(
-                    activityItems: [tempURL],
-                    applicationActivities: nil
-                )
+                await MainActor.run { isLoading = true }
                 
-                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                   let window = windowScene.windows.first,
-                   let rootVC = window.rootViewController {
-                    if let popover = activityVC.popoverPresentationController {
-                        popover.sourceView = rootVC.view
-                        popover.sourceRect = CGRect(x: UIScreen.main.bounds.width / 2,
-                                                  y: UIScreen.main.bounds.height / 2,
-                                                  width: 0,
-                                                  height: 0)
-                        popover.permittedArrowDirections = []
+                // Get all sessions for the client, both active and completed
+                let allSessions = client.sessions ?? []
+                
+                // Sort sessions by their original session number
+                let sortedSessions = allSessions.sorted { 
+                    ($0.sessionNumber, $0.isCompleted ? 0 : 1) < ($1.sessionNumber, $1.isCompleted ? 0 : 1)
+                }
+                
+                // Generate PDF in background
+                let pdfData = try await withCheckedThrowingContinuation { continuation in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        if let data = PDFGenerator.generateSessionsPDF(clientName: client.name, 
+                                                                 sessions: sortedSessions) {
+                            continuation.resume(returning: data)
+                        } else {
+                            continuation.resume(throwing: NSError(domain: "PDFGenerator", code: -1, 
+                                userInfo: [NSLocalizedDescriptionKey: "Failed to generate PDF"]))
+                        }
                     }
-                    rootVC.present(activityVC, animated: true)
+                }
+                
+                // Create temporary file URL
+                let fileName = "MyPTbook_\(client.name.replacingOccurrences(of: " ", with: "_"))_Sessions.pdf"
+                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+                
+                try pdfData.write(to: tempURL)
+                
+                // Present share sheet on main thread
+                await MainActor.run {
+                    isLoading = false
+                    let activityVC = UIActivityViewController(
+                        activityItems: [tempURL],
+                        applicationActivities: nil
+                    )
+                    
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let window = windowScene.windows.first,
+                       let rootVC = window.rootViewController {
+                        if let popover = activityVC.popoverPresentationController {
+                            popover.sourceView = rootVC.view
+                            popover.sourceRect = CGRect(x: UIScreen.main.bounds.width / 2,
+                                                      y: UIScreen.main.bounds.height / 2,
+                                                      width: 0,
+                                                      height: 0)
+                            popover.permittedArrowDirections = []
+                        }
+                        rootVC.present(activityVC, animated: true)
+                    }
                 }
             } catch {
-                print("Error saving PDF: \(error)")
+                await MainActor.run {
+                    isLoading = false
+                    print("Error generating PDF:", error.localizedDescription)
+                }
             }
+        }
+    }
+}
+
+extension Optional where Wrapped == [Session] {
+    var isNilOrEmpty: Bool {
+        switch self {
+        case .none:
+            return true
+        case .some(let array):
+            return array.isEmpty
         }
     }
 }
@@ -379,34 +467,39 @@ struct MetricView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.subheadline.bold())
-                .foregroundColor(.black)
+                .font(DesignSystem.adaptiveFont(size: DesignSystem.isIPad ? 15 : 14, weight: .bold))
+                .foregroundColor(.gray.opacity(0.9))
             
             if isEditing {
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     TextField("0", text: $value)
                         .keyboardType(.decimalPad)
-                        .font(.body.bold())
+                        .font(DesignSystem.adaptiveFont(size: DesignSystem.isIPad ? 15 : 16, weight: .bold))
                         .multilineTextAlignment(.leading)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .frame(width: 40)
+                        .frame(width: DesignSystem.adaptiveSize(45))
                         .foregroundColor(.black)
                         .tint(Colors.nasmBlue)
                     Text(unit)
-                        .font(.body.bold())
-                        .foregroundColor(.black)
+                        .font(DesignSystem.adaptiveFont(size: DesignSystem.isIPad ? 14 : 14, weight: .bold))
+                        .foregroundColor(.gray.opacity(0.9))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
             } else {
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     Text(value)
-                        .font(.body.bold())
+                        .font(DesignSystem.adaptiveFont(size: DesignSystem.isIPad ? 15 : 16, weight: .bold))
                         .foregroundColor(.black)
                     Text(unit)
-                        .font(.body.bold())
-                        .foregroundColor(.black)
+                        .font(DesignSystem.adaptiveFont(size: DesignSystem.isIPad ? 14 : 14, weight: .bold))
+                        .foregroundColor(.gray.opacity(0.9))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -419,13 +512,13 @@ struct InfoSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.subheadline.bold())
-                .foregroundColor(.primary)
+                .font(DesignSystem.adaptiveFont(size: DesignSystem.isIPad ? 16 : 14, weight: .bold))
+                .foregroundColor(.gray.opacity(0.9))
             
             if isEditing {
                 TextEditor(text: $text)
                     .frame(height: 60)
-                    .font(.body.bold())
+                    .font(DesignSystem.adaptiveFont(size: DesignSystem.isIPad ? 15 : 15, weight: .bold))
                     .padding(4)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
@@ -434,7 +527,7 @@ struct InfoSection: View {
                     .tint(Colors.nasmBlue)
             } else {
                 Text(text.isEmpty ? "Not specified" : text)
-                    .font(.body.bold())
+                    .font(DesignSystem.adaptiveFont(size: DesignSystem.isIPad ? 15 : 15, weight: .bold))
                     .foregroundColor(text.isEmpty ? .gray : .primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -628,23 +721,47 @@ struct ProfileImageView: View {
     let size: CGFloat
     @State private var loadError: Error?
     
+    // Add image cache
+    private static let imageCache = NSCache<NSString, UIImage>()
+    
     var body: some View {
         Group {
             if let url = imageUrl, !url.isEmpty {
-                AsyncImage(url: URL(string: url)) { phase in
+                AsyncImage(url: URL(string: url), transaction: .init(animation: .easeInOut)) { phase in
                     switch phase {
                     case .empty:
                         fallbackImage
+                            .transition(.opacity)
                     case .success(let image):
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                             .frame(width: size, height: size)
                             .clipShape(Circle())
+                            .background(
+                                Circle()
+                                    .fill(Color.gray.opacity(0.1))
+                                    .frame(width: size, height: size)
+                            )
                             .overlay(Circle().stroke(Color.gray.opacity(0.2), lineWidth: 1))
                             .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+                            .transition(.opacity)
+                            .onAppear {
+                                // Cache the image synchronously
+                                if let uiImage = image.asUIImage() {
+                                    Self.imageCache.setObject(uiImage, forKey: url as NSString)
+                                }
+                            }
                     case .failure:
-                        fallbackImage
+                        if let cachedImage = Self.imageCache.object(forKey: url as NSString) {
+                            Image(uiImage: cachedImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: size, height: size)
+                                .clipShape(Circle())
+                        } else {
+                            fallbackImage
+                        }
                     @unknown default:
                         fallbackImage
                     }
@@ -666,11 +783,6 @@ struct ProfileImageView: View {
                     .frame(width: size * 0.45, height: size * 0.45)
                     .foregroundColor(Color.gray.opacity(0.5))
             )
-            .overlay(
-                Circle()
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
     }
 }
 
@@ -773,6 +885,22 @@ extension View {
         ZStack(alignment: alignment) {
             placeholder().opacity(shouldShow ? 1 : 0)
             self
+        }
+    }
+}
+
+extension Image {
+    func asUIImage() -> UIImage? {
+        let controller = UIHostingController(rootView: self)
+        let view = controller.view
+        
+        let targetSize = controller.view.intrinsicContentSize
+        view?.bounds = CGRect(origin: .zero, size: targetSize)
+        view?.backgroundColor = .clear
+        
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        return renderer.image { _ in
+            view?.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: true)
         }
     }
 }

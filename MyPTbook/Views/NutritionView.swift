@@ -447,7 +447,7 @@ struct AddNewMealDirectView: View {
             // Header with icon and text field
             HStack {
                 Label {
-                    TextField("Meal name", text: $newMealName)
+                    TextField("Breakfast, Lunch, Meal 1,2, etc", text: $newMealName)
                         .textFieldStyle(.plain)
                         .font(.headline)
                 } icon: {

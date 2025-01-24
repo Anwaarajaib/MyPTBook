@@ -7,18 +7,27 @@ import { cloudinary } from '../config/cloudinary.js';
 
 export const login = async (req, res) => {
     try {
-        console.log('Processing login request');
+        console.log('Login controller started');
         const { email, password } = req.body;
         
+        if (!email || !password) {
+            console.log('Missing email or password');
+            return res.status(400).json({ message: "Email and password are required" });
+        }
+        
+        console.log('Attempting to find user with email:', email);
         const user = await User.findOne({ email: email.toLowerCase() });
+        
         if (!user) {
-            console.log('User not found');
+            console.log('User not found for email:', email);
             return res.status(401).json({ message: "Invalid email or password" });
         }
 
+        console.log('User found, verifying password');
         const isValidPassword = await user.comparePassword(password);
+        
         if (!isValidPassword) {
-            console.log('Invalid password');
+            console.log('Invalid password for user:', email);
             return res.status(401).json({ message: "Invalid email or password" });
         }
 
@@ -28,14 +37,7 @@ export const login = async (req, res) => {
             { expiresIn: '7d' }
         );
         
-        console.log('Login successful for user:', user._id);
-        console.log('User data:', {
-            id: user._id,
-            name: user.name,
-            email: user.email,
-            userImage: user.userImage || null
-        });
-        
+        console.log('Login successful, sending response');
         res.json({
             token,
             user: {
@@ -46,8 +48,11 @@ export const login = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ message: error.message });
+        console.error('Login controller error:', error);
+        res.status(500).json({ 
+            message: "Internal server error", 
+            error: error.message 
+        });
     }
 };
 

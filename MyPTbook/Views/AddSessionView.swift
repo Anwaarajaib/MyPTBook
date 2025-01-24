@@ -48,6 +48,14 @@ struct AddSessionView: View {
         }
     }
     
+    // Add this enum
+    private enum ExerciseMetricType {
+        case reps, time
+    }
+    
+    // Add state variable for metric type
+    @State private var exerciseMetricTypes: [ExerciseMetricType] = []
+    
     // Initialize with one empty exercise
     init(client: Client) {
         self.client = client
@@ -67,7 +75,7 @@ struct AddSessionView: View {
                         VStack(spacing: 12) {
                             // Workout Name
                             TextField("Workout Name", text: $workoutName)
-                                .font(.title2.bold())
+                                .font(.title3.bold())
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 16)
@@ -81,9 +89,11 @@ struct AddSessionView: View {
                                     VStack(spacing: 0) {
                                         exerciseRow(exercise: exercise, index: index)
                                             .padding(.horizontal, 20)
-                                            .padding(.vertical, 8)
+                                            .padding(.vertical, exerciseGroupTypes[index] != nil ? 4 : 8)
                                         
-                                        if index < exercises.count - 1 {
+                                        if index < exercises.count - 1 &&
+                                           (exerciseGroupTypes[index] == nil ||
+                                            exerciseGroupTypes[index] != exerciseGroupTypes[index + 1]) {
                                             Divider()
                                                 .padding(.horizontal, 20)
                                         }
@@ -167,17 +177,27 @@ struct AddSessionView: View {
                 }
                 
                 HStack {
-                    TextField("Exercise name", text: $exerciseNames[index])
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .frame(height: 32)
-                        .font(.body.bold())
-                        .foregroundColor(.primary)
-                        .accentColor(Colors.nasmBlue)
-                        .onChange(of: exerciseNames[index]) { _, newValue in
-                            var updatedExercise = exercises[index]
-                            updatedExercise.exerciseName = newValue
-                            exercises[index] = updatedExercise
+                    // Create an HStack for the name and bullet point
+                    HStack(spacing: 4) {
+                        if exerciseGroupTypes[index] != nil {
+                            // Bullet point before exercise name
+                            Image(systemName: "circle.fill")
+                                .font(.system(size: 6))
+                                .foregroundColor(.primary.opacity(0.6))
                         }
+                        
+                        TextField("Exercise name", text: $exerciseNames[index])
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .frame(height: 32)
+                            .font(.body.bold())
+                            .foregroundColor(.primary)
+                            .accentColor(Colors.nasmBlue)
+                            .onChange(of: exerciseNames[index]) { _, newValue in
+                                var updatedExercise = exercises[index]
+                                updatedExercise.exerciseName = newValue
+                                exercises[index] = updatedExercise
+                            }
+                    }
                     
                     Button(action: {
                         exercises.remove(at: index)
@@ -193,122 +213,143 @@ struct AddSessionView: View {
                 }
             }
             
-            // Only show sets and reps for single exercises
-            if exerciseGroupTypes[index] == nil {
-                // Show both sets and reps for single exercises
-                HStack(spacing: 24) {
-                    // Sets
+            // Reps/Time Picker and Input
+            HStack(spacing: 24) {
+                // Sets (if not in a group)
+                if exerciseGroupTypes[index] == nil {
+                    // Show both sets and reps for single exercises
                     HStack(spacing: 8) {
-                        Image(systemName: "square.stack.3d.up.fill")
-                            .foregroundColor(Colors.nasmBlue)
-                            .imageScale(.large)
+                        // Sets
+                        HStack(spacing: 8) {
+                            Image(systemName: "square.stack.3d.up.fill")
+                                .foregroundColor(Colors.nasmBlue)
+                                .imageScale(.large)
+                            
+                            TextField("", text: $exerciseSets[index])
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .frame(width: 60, height: 32)
+                                .font(.body.bold())
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.center)
+                                .foregroundColor(.primary)
+                                .focused($focusedSetsField, equals: index)
+                                .overlay(
+                                    Text("Sets")
+                                        .font(.body.bold())
+                                        .foregroundColor(Color(.placeholderText))
+                                        .opacity(exerciseSets[index].isEmpty && focusedSetsField != index ? 1 : 0)
+                                )
+                                .onChange(of: exerciseSets[index]) { _, newValue in
+                                    if let value = Int(newValue.trimmingCharacters(in: .whitespaces)) {
+                                        var updatedExercise = exercises[index]
+                                        updatedExercise.sets = value
+                                        exercises[index] = updatedExercise
+                                    }
+                                }
+                        }
                         
-                        TextField("", text: $exerciseSets[index])
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .frame(width: 60, height: 32)
-                            .font(.body.bold())
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.primary)
-                            .focused($focusedSetsField, equals: index)
-                            .overlay(
-                                Text("Sets")
-                                    .font(.body.bold())
-                                    .foregroundColor(Color(.placeholderText))
-                                    .opacity(exerciseSets[index].isEmpty && focusedSetsField != index ? 1 : 0)
-                            )
-                            .onChange(of: exerciseSets[index]) { _, newValue in
-                                if let value = Int(newValue.trimmingCharacters(in: .whitespaces)) {
-                                    var updatedExercise = exercises[index]
-                                    updatedExercise.sets = value
-                                    exercises[index] = updatedExercise
+                        // Reps/Time Input
+                        HStack(spacing: 8) {
+                            TextField("", text: $exerciseReps[index])
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .frame(width: 60, height: 32)
+                                .font(.body.bold())
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.center)
+                                .overlay(
+                                    Text(exerciseMetricTypes[index] == .reps ? "Reps" : "Sec")
+                                        .font(.body.bold())
+                                        .foregroundColor(Color(.placeholderText))
+                                        .opacity(exerciseReps[index].isEmpty ? 1 : 0)
+                                )
+                            
+                            // Move the type selector here
+                            HStack(spacing: 0) {
+                                ForEach([ExerciseMetricType.reps, .time], id: \.self) { type in
+                                    Button(action: {
+                                        exerciseMetricTypes[index] = type
+                                        var updatedExercise = exercises[index]
+                                        if type == .reps {
+                                            updatedExercise.reps = Int(exerciseReps[index]) ?? 0
+                                            updatedExercise.time = nil
+                                        } else {
+                                            updatedExercise.time = Int(exerciseReps[index])
+                                            updatedExercise.reps = 0
+                                        }
+                                        exercises[index] = updatedExercise
+                                    }) {
+                                        Text(type == .reps ? "Reps" : "Time")
+                                            .font(.footnote.bold())
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 8)
+                                            .background(exerciseMetricTypes[index] == type ? Colors.nasmBlue : Color.clear)
+                                            .foregroundColor(exerciseMetricTypes[index] == type ? .white : Colors.nasmBlue)
+                                    }
                                 }
                             }
-                    }
-                    
-                    // Reps
-                    HStack(spacing: 8) {
-                        Image(systemName: "figure.strengthtraining.traditional")
-                            .foregroundColor(Colors.nasmBlue)
-                            .imageScale(.large)
-                        
-                        TextField("", text: $exerciseReps[index])
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .frame(width: 60, height: 32)
-                            .font(.body.bold())
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.primary)
-                            .focused($focusedRepsField, equals: index)
-                            .overlay(
-                                Text("Reps")
-                                    .font(.body.bold())
-                                    .foregroundColor(Color(.placeholderText))
-                                    .opacity(exerciseReps[index].isEmpty && focusedRepsField != index ? 1 : 0)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Colors.nasmBlue, lineWidth: 1)
                             )
-                            .onChange(of: exerciseReps[index]) { _, newValue in
-                                if let value = Int(newValue.trimmingCharacters(in: .whitespaces)) {
-                                    var updatedExercise = exercises[index]
-                                    updatedExercise.reps = value
-                                    exercises[index] = updatedExercise
-                                }
-                            }
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .frame(width: 120)
+                        }
+                        
+                        Spacer()
                     }
-                    
-                    Spacer()
+                    .padding(.leading, 30)
+                } else {
+                    // Only show reps for grouped exercises
+                    HStack(spacing: 24) {
+                        // Reps only
+                        HStack(spacing: 8) {
+                            Image(systemName: "figure.strengthtraining.traditional")
+                                .foregroundColor(Colors.nasmBlue)
+                                .imageScale(.large)
+                            
+                            TextField("", text: $exerciseReps[index])
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .frame(width: 60, height: 32)
+                                .font(.body.bold())
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.center)
+                                .foregroundColor(.primary)
+                                .focused($focusedRepsField, equals: index)
+                                .overlay(
+                                    Text("Reps")
+                                        .font(.body.bold())
+                                        .foregroundColor(Color(.placeholderText))
+                                        .opacity(exerciseReps[index].isEmpty && focusedRepsField != index ? 1 : 0)
+                                )
+                                .onChange(of: exerciseReps[index]) { _, newValue in
+                                    if let value = Int(newValue.trimmingCharacters(in: .whitespaces)) {
+                                        var updatedExercise = exercises[index]
+                                        updatedExercise.reps = value
+                                        exercises[index] = updatedExercise
+                                    }
+                                }
+                        }
+                        
+                        Spacer()
+                    }
+                    .padding(.leading, 30)
                 }
-                .padding(.leading, 30)
-            } else {
-                // Only show reps for grouped exercises
-                HStack(spacing: 24) {
-                    // Reps only
-                    HStack(spacing: 8) {
-                        Image(systemName: "figure.strengthtraining.traditional")
-                            .foregroundColor(Colors.nasmBlue)
-                            .imageScale(.large)
-                        
-                        TextField("", text: $exerciseReps[index])
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .frame(width: 60, height: 32)
-                            .font(.body.bold())
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.primary)
-                            .focused($focusedRepsField, equals: index)
-                            .overlay(
-                                Text("Reps")
-                                    .font(.body.bold())
-                                    .foregroundColor(Color(.placeholderText))
-                                    .opacity(exerciseReps[index].isEmpty && focusedRepsField != index ? 1 : 0)
-                            )
-                            .onChange(of: exerciseReps[index]) { _, newValue in
-                                if let value = Int(newValue.trimmingCharacters(in: .whitespaces)) {
-                                    var updatedExercise = exercises[index]
-                                    updatedExercise.reps = value
-                                    exercises[index] = updatedExercise
-                                }
-                            }
+                
+                // Add "Add to Circuit" button if this is the last exercise in a circuit
+                if let groupType = exerciseGroupTypes[index],
+                   groupType == .circuit,
+                   isLastInGroup(at: index) {
+                    Button(action: {
+                        addExerciseToCircuit(afterIndex: index)
+                    }) {
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                            Text("Add to Circuit")
+                                .font(.footnote.bold())
+                        }
+                        .foregroundColor(Colors.nasmBlue)
+                        .padding(.top, 8)
                     }
-                    
-                    Spacer()
-                }
-                .padding(.leading, 30)
-            }
-            
-            // Add "Add to Circuit" button if this is the last exercise in a circuit
-            if let groupType = exerciseGroupTypes[index],
-               groupType == .circuit,
-               isLastInGroup(at: index) {
-                Button(action: {
-                    addExerciseToCircuit(afterIndex: index)
-                }) {
-                    HStack {
-                        Image(systemName: "plus.circle.fill")
-                        Text("Add to Circuit")
-                            .font(.footnote.bold())
-                    }
-                    .foregroundColor(Colors.nasmBlue)
-                    .padding(.top, 8)
                 }
             }
         }
@@ -380,48 +421,43 @@ struct AddSessionView: View {
             exerciseSets.append("")
             exerciseReps.append("")
             exerciseGroupTypes.append(nil)
+            exerciseMetricTypes.append(.reps)
         }
     }
     
     private func addNewExerciseGroup(_ groupType: Exercise.GroupType) {
-        var newExercises: [Exercise] = []
-        var names: [String] = []
-        var sets: [String] = []
-        var reps: [String] = []
-        var types: [Exercise.GroupType?] = []
-        
-        // Number of exercises to add based on group type
+        // Generate a unique group ID for this set of exercises
+        let groupId = UUID().uuidString
         let count = groupType == .superset ? 2 : 3
         
-        // Create the specified number of exercises
-        for _ in 0..<count {
-            let exercise = Exercise(
-                _id: "",
-                exerciseName: "",
-                sets: 0,
-                reps: 0,
-                weight: 0,
-                time: nil,
-                groupType: groupType,
-                session: ""
-            )
-            newExercises.append(exercise)
-            names.append("")
-            sets.append("")
-            reps.append("")
-            types.append(groupType)
-        }
-        
         withAnimation {
-            exercises.append(contentsOf: newExercises)
-            exerciseNames.append(contentsOf: names)
-            exerciseSets.append(contentsOf: sets)
-            exerciseReps.append(contentsOf: reps)
-            exerciseGroupTypes.append(contentsOf: types)
+            for _ in 0..<count {
+                let newExercise = Exercise(
+                    _id: "",
+                    exerciseName: "",
+                    sets: 0,
+                    reps: 0,
+                    weight: 0,
+                    time: nil,
+                    groupType: groupType,
+                    groupId: groupId,  // Add the group ID
+                    session: ""
+                )
+                
+                exercises.append(newExercise)
+                exerciseNames.append("")
+                exerciseSets.append("")
+                exerciseReps.append("")
+                exerciseGroupTypes.append(groupType)
+                exerciseMetricTypes.append(.reps)
+            }
         }
     }
     
     private func addExerciseToCircuit(afterIndex: Int) {
+        // Get the groupId from the exercise we're adding to
+        let groupId = exercises[afterIndex].groupId
+        
         let newExercise = Exercise(
             _id: "",
             exerciseName: "",
@@ -430,16 +466,17 @@ struct AddSessionView: View {
             weight: 0,
             time: nil,
             groupType: .circuit,
+            groupId: groupId,  // Use the same groupId
             session: ""
         )
         
         withAnimation {
-            // Insert the new exercise after the current last exercise in the circuit
             exercises.insert(newExercise, at: afterIndex + 1)
             exerciseNames.insert("", at: afterIndex + 1)
             exerciseSets.insert("", at: afterIndex + 1)
             exerciseReps.insert("", at: afterIndex + 1)
             exerciseGroupTypes.insert(.circuit, at: afterIndex + 1)
+            exerciseMetricTypes.insert(.reps, at: afterIndex + 1)
         }
     }
     
@@ -495,6 +532,9 @@ struct AddSessionView: View {
             }
         }
         
+        // Dismiss immediately
+        dismiss()
+        
         Task {
             isProcessing = true
             do {
@@ -506,7 +546,7 @@ struct AddSessionView: View {
                     completedDate: nil
                 )
                 
-                // 2. Create all exercises with their group types
+                // 2. Create exercises sequentially to maintain order
                 for index in 0..<exercises.count {
                     let exercise = Exercise(
                         _id: "",
@@ -528,14 +568,13 @@ struct AddSessionView: View {
                         name: NSNotification.Name("RefreshClientData"),
                         object: nil
                     )
-                    dismiss()
                 }
             } catch {
                 await MainActor.run {
                     isProcessing = false
                     self.error = "Failed to save session: \(error.localizedDescription)"
                     showingError = true
-                    print("Save error:", error) // Debug print
+                    print("Save error:", error)
                 }
             }
         }
@@ -586,24 +625,39 @@ struct AddSessionView: View {
     // Add this function to check if an exercise is the last one in its group
     private func isLastInGroup(at index: Int) -> Bool {
         guard index < exercises.count - 1 else { return true }
-        let currentType = exerciseGroupTypes[index]
-        let nextType = exerciseGroupTypes[index + 1]
-        return currentType != nextType
+        let currentExercise = exercises[index]
+        let nextExercise = exercises[index + 1]
+        return currentExercise.groupId != nextExercise.groupId
     }
     
     // Add this helper function to determine if an exercise is the first in its group
     private func isFirstInGroup(at index: Int) -> Bool {
-        index == 0 || exerciseGroupTypes[index - 1] != exerciseGroupTypes[index]
+        guard index > 0 else { return true }
+        let currentExercise = exercises[index]
+        let previousExercise = exercises[index - 1]
+        return currentExercise.groupId != previousExercise.groupId
     }
     
     // Add this helper function to get the display number for an exercise
     private func displayNumber(for index: Int) -> Int {
         var number = 1
+        var currentGroupId: String? = nil
+        
         for i in 0..<index {
-            if isFirstInGroup(at: i) {
+            if let groupId = exercises[i].groupId {
+                // If this is the start of a new group
+                if currentGroupId == nil || groupId != currentGroupId {
+                    number += 1
+                    currentGroupId = groupId
+                }
+                // If it's part of the same group, don't increment
+            } else {
+                // For non-grouped exercises, always increment
                 number += 1
+                currentGroupId = nil
             }
         }
+        
         return number
     }
 }

@@ -4,6 +4,7 @@ import SwiftUICore
 
 struct AddClientView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.presentationMode) var presentationMode
     @ObservedObject var dataManager: DataManager
     
     // MARK: - State Properties
@@ -22,6 +23,7 @@ struct AddClientView: View {
     @State private var nutritionPlan = ""
     @State private var isProcessing = false
     @State private var error: String?
+    @State private var showingPopover = false
     
     // Add these constants at the top of the struct to match ClientDetailView
     private let cardPadding: CGFloat = 24
@@ -31,59 +33,55 @@ struct AddClientView: View {
     private let minimumTapTarget: CGFloat = 44
     
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                mainContent
-            }
-            .background(Colors.background)
-            .ignoresSafeArea()
-            .navigationTitle("Add Client")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { toolbarContent }
-            .confirmationDialog("Change Profile Picture", isPresented: $showingActionSheet) {
-                dialogButtons
-            }
-            .sheet(isPresented: $showingImagePicker) {
-                ImagePicker(
-                    image: $selectedImage,
-                    sourceType: .photoLibrary,
-                    showAlert: $showAlert,
-                    alertMessage: $alertMessage
-                )
-            }
-            .fullScreenCover(isPresented: $showingCamera) {
-                ImagePicker(
-                    image: $selectedImage,
-                    sourceType: .camera,
-                    showAlert: $showAlert,
-                    alertMessage: $alertMessage
-                )
-            }
-            .alert("Camera Access", isPresented: $showAlert) {
-                Button("OK") {
-                    if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(settingsUrl)
-                    }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text(alertMessage)
-            }
-            .alert("Error", isPresented: $showAlert) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text(error ?? alertMessage)
-            }
+        ScrollView {
+            mainContent
         }
-        .onAppear {
-            print("MainAppView appeared, client count:", dataManager.clients.count)
+        .background(Colors.background)
+        .ignoresSafeArea()
+        .navigationTitle("Add Client")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar { toolbarContent }
+        .confirmationDialog("Change Profile Picture", isPresented: $showingActionSheet) {
+            dialogButtons
+        }
+        .sheet(isPresented: $showingImagePicker) {
+            ImagePicker(
+                image: $selectedImage,
+                sourceType: .photoLibrary,
+                showAlert: $showAlert,
+                alertMessage: $alertMessage
+            )
+        }
+        .fullScreenCover(isPresented: $showingCamera) {
+            ImagePicker(
+                image: $selectedImage,
+                sourceType: .camera,
+                showAlert: $showAlert,
+                alertMessage: $alertMessage
+            )
+        }
+        .alert("Camera Access", isPresented: $showAlert) {
+            Button("OK") {
+                if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(settingsUrl)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(alertMessage)
+        }
+        .alert("Error", isPresented: $showAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(error ?? alertMessage)
         }
     }
     
     // MARK: - Main Content
     private var mainContent: some View {
         VStack(spacing: 24) {
-            Color.clear.frame(height: 70)
+            Color.clear.frame(height: 100)
             clientDetailsCard
         }
         .padding(.horizontal, 16)
@@ -115,27 +113,63 @@ struct AddClientView: View {
                                 Image(systemName: "person.fill")
                                     .resizable()
                                     .scaledToFit()
-                                    .frame(width: 35, height: 35)
+                                    .frame(width: 36, height: 36)
                                     .foregroundColor(Color.gray.opacity(0.5))
                             )
                             .overlay(
                                 Circle()
                                     .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                             )
-                            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
                     }
                     
-                    // Camera Button
-                    Image(systemName: "camera")
-                        .font(.system(size: 18))
-                        .foregroundColor(Colors.nasmBlue)
-                        .padding(7)
-                        .background(Color.white)
-                        .clipShape(Circle())
-                        .shadow(color: .gray.opacity(0.3), radius: 4, x: 0, y: 2)
-                        .offset(x: 26, y: 26)
+                    Button(action: {
+                        if DesignSystem.isIPad {
+                            showingPopover = true
+                        } else {
+                            showingActionSheet = true
+                        }
+                    }) {
+                        Image(systemName: "camera")
+                            .font(.system(size: DesignSystem.isIPad ? 24 : 18))
+                            .foregroundColor(Colors.nasmBlue)
+                            .padding(7)
+                            .background(Color.white)
+                            .clipShape(Circle())
+                            .shadow(color: .gray.opacity(0.3), radius: 4, x: 0, y: 2)
+                    }
+                    .offset(x: DesignSystem.isIPad ? 26 : 26, 
+                            y: DesignSystem.isIPad ? 26 : 26)
+                    .popover(isPresented: $showingPopover,
+                             attachmentAnchor: .point(.topTrailing),
+                             arrowEdge: .leading) {
+                        VStack(spacing: 0) {
+                            Button(action: { 
+                                showingPopover = false
+                                showingCamera = true 
+                            }) {
+                                Text("Take Photo")
+                                    .font(.system(size: 17))
+                                    .foregroundColor(.blue)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: { 
+                                showingPopover = false
+                                showingImagePicker = true 
+                            }) {
+                                Text("Choose from Library")
+                                    .font(.system(size: 17))
+                                    .foregroundColor(.blue)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                            }
+                        }
+                        .frame(width: 200)
+                    }
                 }
-                .onTapGesture { showingActionSheet = true }
                 .frame(width: minimumTapTarget, height: minimumTapTarget)
                 .padding(.top, 7)
                 .padding(.leading, 7)
@@ -232,7 +266,7 @@ struct AddClientView: View {
     // MARK: - Toolbar Content
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .navigationBarLeading) {
-            Button(action: { dismiss() }) {
+            Button(action: { presentationMode.wrappedValue.dismiss() }) {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
                         .fontWeight(.semibold)
@@ -262,39 +296,40 @@ struct AddClientView: View {
                 throw APIError.serverError("User ID not found")
             }
             
-            // Upload image if selected
+            // Initialize imageUrl as empty string
             var imageUrl = ""
-            if let image = selectedImage,
-               let processedImageData = processImageForUpload(image) {
+            
+            // Upload image if one is selected
+            if let image = selectedImage, let processedImageData = processImageForUpload(image) {
                 print("Uploading client image...")
                 imageUrl = try await APIClient.shared.uploadImage(processedImageData)
                 print("Image uploaded successfully:", imageUrl)
-                
-                // Create new client with the image URL
-                let newClient = Client(
-                    name: name,
-                    age: Int(age) ?? 0,
-                    height: Double(height) ?? 0,
-                    weight: Double(weight) ?? 0,
-                    medicalHistory: medicalHistory,
-                    goals: goals,
-                    clientImage: imageUrl,
-                    user: userId
+            }
+            
+            // Create new client with or without image URL
+            let newClient = Client(
+                name: name,
+                age: Int(age) ?? 0,
+                height: Double(height) ?? 0,
+                weight: Double(weight) ?? 0,
+                medicalHistory: medicalHistory,
+                goals: goals,
+                clientImage: imageUrl,
+                userId: userId
+            )
+            
+            print("Creating client with userId:", userId)
+            let savedClient = try await dataManager.addClient(newClient)
+            print("Client saved successfully:", savedClient)
+            
+            await MainActor.run {
+                isProcessing = false
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("RefreshClientData"),
+                    object: nil
                 )
-                
-                print("Creating client with userId:", userId)
-                let savedClient = try await dataManager.addClient(newClient)
-                print("Client saved successfully:", savedClient)
-                
-                await MainActor.run {
-                    isProcessing = false
-                    NotificationCenter.default.post(
-                        name: NSNotification.Name("RefreshClientData"),
-                        object: nil
-                    )
-                    print("Posted refresh notification")
-                    dismiss()
-                }
+                print("Posted refresh notification")
+                presentationMode.wrappedValue.dismiss()
             }
         } catch {
             print("Save client error:", error)
@@ -302,7 +337,6 @@ struct AddClientView: View {
                 isProcessing = false
                 self.error = handleError(error)
                 showAlert = true
-                selectedImage = nil  // Reset selected image on error
             }
         }
     }

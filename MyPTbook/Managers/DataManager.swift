@@ -67,7 +67,7 @@ class DataManager: ObservableObject {
         }
         
         // Create a client with the user ID
-        let clientWithUser = Client(
+        let clientWithUserId = Client(
             name: client.name,
             age: client.age,
             height: client.height,
@@ -75,10 +75,11 @@ class DataManager: ObservableObject {
             medicalHistory: client.medicalHistory,
             goals: client.goals,
             clientImage: client.clientImage,
-            user: userId  // Add the user ID here
+            userId: userId  // Use userId to match the Client model
         )
         
-        let savedClient = try await APIClient.shared.createClient(clientWithUser)
+        print("DataManager: Creating client with userId:", userId)
+        let savedClient = try await APIClient.shared.createClient(clientWithUserId)
         await MainActor.run {
             clients.append(savedClient)
         }
