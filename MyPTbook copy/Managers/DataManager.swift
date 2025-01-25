@@ -39,17 +39,6 @@ class DataManager: ObservableObject {
         }
     }
     
-    // Add at the top with other properties
-    private let cache = NSCache<NSString, AnyObject>()
-    private let lastFetchTimeKey = "lastFetchTime_"
-    private let cacheExpirationInterval: TimeInterval = 300 // 5 minutes
-    
-    // Add to existing properties
-    private let localStorage = LocalStorage.shared
-    
-    // Add new property at the top
-    private let sessionCache: [String: [Session]] = [:]
-    
     private init() {
         // Initialize with stored values
         self.userName = defaults.string(forKey: userNameKey) ?? "Your Name"
@@ -61,43 +50,12 @@ class DataManager: ObservableObject {
     
     // MARK: - Client CRUD Operations
     func fetchClients() async throws {
-        let cacheKey = "clients"
-        
-        // Check memory cache first
-        if !shouldRefetch(forKey: cacheKey),
-           let cachedClients: [Client] = getCachedData(forKey: cacheKey) {
-            print("DataManager: Using memory cached clients")
-            await MainActor.run {
-                self.clients = cachedClients
-            }
-            return
-        }
-        
-        // Check local storage next
-        if let storedClients: [Client] = localStorage.load(forKey: cacheKey) {
-            print("DataManager: Using locally stored clients")
-            await MainActor.run {
-                self.clients = storedClients
-            }
-        }
-        
-        // Fetch from API
-        do {
-            print("DataManager: Fetching clients from API")
-            let fetchedClients = try await APIClient.shared.fetchClients()
-            
-            await MainActor.run {
-                self.clients = fetchedClients
-                self.cacheData(fetchedClients, forKey: cacheKey)
-                self.localStorage.save(fetchedClients, forKey: cacheKey)
-            }
-        } catch {
-            print("DataManager: Error fetching clients:", error)
-            // If we have local data, don't throw the error
-            if !self.clients.isEmpty {
-                return
-            }
-            throw error
+        print("DataManager: Fetching clients")
+        let fetchedClients = try await APIClient.shared.fetchClients()
+        print("DataManager: Fetched \(fetchedClients.count) clients")
+        await MainActor.run {
+            self.clients = fetchedClients
+            print("DataManager: Updated clients in state")
         }
     }
     
@@ -162,9 +120,6 @@ class DataManager: ObservableObject {
                 sessions.removeAll { $0._id == sessionId }
                 updatedClient.sessions = sessions
                 self.clients[clientIndex] = updatedClient
-                
-                // Update cache
-                updateSessionCache(clientId: clientId, sessions: sessions)
             }
         }
     }
@@ -178,7 +133,10 @@ class DataManager: ObservableObject {
             "exercises": []
         ] as [String: Any]
         
+        print("DataManager: Creating session with data:", sessionData)
+        
         let createdSession = try await APIClient.shared.createSession(clientId: clientId, sessionData: sessionData)
+        print("DataManager: Session created successfully")
         
         await MainActor.run {
             if let index = clients.firstIndex(where: { $0._id == clientId }) {
@@ -187,16 +145,16 @@ class DataManager: ObservableObject {
                 sessions.append(createdSession)
                 updatedClient.sessions = sessions
                 clients[index] = updatedClient
-                
-                // Update cache
-                updateSessionCache(clientId: clientId, sessions: sessions)
+                print("DataManager: Updated client with new session")
             }
         }
         return createdSession
     }
 
     func updateSession(clientId: String, session: Session) async throws {
+        print("DataManager: Updating session:", session._id)
         let updatedSession = try await APIClient.shared.updateSession(clientId: clientId, session: session)
+        print("DataManager: Session updated successfully")
         
         await MainActor.run {
             if let clientIndex = clients.firstIndex(where: { $0._id == clientId }) {
@@ -206,9 +164,7 @@ class DataManager: ObservableObject {
                         sessions[sessionIndex] = updatedSession
                         updatedClient.sessions = sessions
                         clients[clientIndex] = updatedClient
-                        
-                        // Update cache
-                        updateSessionCache(clientId: clientId, sessions: sessions)
+                        print("DataManager: Updated client's session in local state")
                     }
                 }
             }
@@ -282,7 +238,6 @@ class DataManager: ObservableObject {
     func logout() {
         print("DataManager: Logging out user - Email:", getUserEmail())
         clearAllData()
-        clearCache()
         NotificationCenter.default.post(name: NSNotification.Name("LogoutNotification"), object: nil)
         print("DataManager: User logged out successfully")
     }
@@ -377,88 +332,46 @@ class DataManager: ObservableObject {
     }
     
     func fetchClientSessions(for client: Client) async throws {
-        let cacheKey = "sessions_\(client._id)"
+        print("DataManager: Starting to fetch sessions for client:", client._id)
+        let sessions = try await APIClient.shared.fetchClientSessions(clientId: client._id)
+        print("DataManager: Successfully fetched \(sessions.count) sessions")
         
-        // First check memory cache
-        if !shouldRefetch(forKey: cacheKey),
-           let cachedSessions: [Session] = getCachedData(forKey: cacheKey) {
-            print("DataManager: Using memory cached sessions for client:", client._id)
-            await MainActor.run {
-                if let index = clients.firstIndex(where: { $0._id == client._id }) {
-                    var updatedClient = clients[index]
-                    updatedClient.sessions = cachedSessions
-                    clients[index] = updatedClient
-                }
+        await MainActor.run {
+            if let index = clients.firstIndex(where: { $0._id == client._id }) {
+                var updatedClient = clients[index]
+                updatedClient.sessions = sessions
+                clients[index] = updatedClient
+                print("DataManager: Updated client with \(sessions.count) sessions")
+                objectWillChange.send()  // Force UI update
             }
-            return
-        }
-        
-        // Then check local storage
-        if let storedSessions: [Session] = localStorage.load(forKey: cacheKey) {
-            print("DataManager: Using locally stored sessions for client:", client._id)
-            await MainActor.run {
-                if let index = clients.firstIndex(where: { $0._id == client._id }) {
-                    var updatedClient = clients[index]
-                    updatedClient.sessions = storedSessions
-                    clients[index] = updatedClient
-                }
-            }
-            // Only return if we're not due for a refresh
-            if !shouldRefetch(forKey: cacheKey) {
-                return
-            }
-        }
-        
-        // Fetch from API
-        do {
-            print("DataManager: Fetching sessions from API for client:", client._id)
-            let sessions = try await APIClient.shared.fetchClientSessions(clientId: client._id)
-            
-            await MainActor.run {
-                if let index = clients.firstIndex(where: { $0._id == client._id }) {
-                    var updatedClient = clients[index]
-                    updatedClient.sessions = sessions
-                    clients[index] = updatedClient
-                    self.cacheData(sessions, forKey: cacheKey)
-                    self.localStorage.save(sessions, forKey: cacheKey)
-                }
-            }
-        } catch {
-            print("DataManager: Error fetching sessions:", error)
-            // If we have cached data, don't throw the error
-            if let index = clients.firstIndex(where: { $0._id == client._id }),
-               clients[index].sessions != nil {
-                return
-            }
-            throw error
         }
     }
     
     func fetchNutrition(for client: Client) async throws {
-        let cacheKey = "nutrition_\(client._id)"
-        
-        if !shouldRefetch(forKey: cacheKey),
-           let cachedNutrition: Nutrition = getCachedData(forKey: cacheKey) {
-            print("DataManager: Using cached nutrition for client:", client._id)
-            await MainActor.run {
-                self.clientNutrition = cachedNutrition
-            }
-            return
-        }
-        
         // Cancel any existing fetch task for this client
         nutritionFetchTasks[client._id]?.cancel()
         
+        // Create new task
         let task = Task { @MainActor in
             do {
-                print("DataManager: Fetching nutrition from API for client:", client._id)
+                print("DataManager: Fetching nutrition for client:", client._id)
                 let nutrition = try await APIClient.shared.getNutritionForClient(clientId: client._id)
                 if !Task.isCancelled {
                     self.clientNutrition = nutrition
-                    self.cacheData(nutrition, forKey: cacheKey)
+                    print("DataManager: Successfully fetched nutrition plan")
+                }
+            } catch let error as APIError {
+                print("DataManager: Error fetching nutrition:", error)
+                if !Task.isCancelled {
+                    // Set empty nutrition plan instead of nil
+                    self.clientNutrition = Nutrition(
+                        _id: "",
+                        client: client._id,
+                        meals: []
+                    )
                 }
             } catch {
-                print("DataManager: Error fetching nutrition:", error)
+                print("DataManager: Unexpected error:", error)
             }
             nutritionFetchTasks[client._id] = nil
         }
@@ -508,48 +421,5 @@ class DataManager: ObservableObject {
     func updateExercise(exerciseId: String, exerciseData: [String: Any]) async throws -> Exercise {
         print("DataManager: Updating exercise:", exerciseId)
         return try await APIClient.shared.updateExercise(exerciseId: exerciseId, exerciseData: exerciseData)
-    }
-    
-    // Add these new methods
-    private func getCachedData<T: Codable>(forKey key: String) -> T? {
-        if let cachedData = cache.object(forKey: key as NSString) as? Data {
-            return try? JSONDecoder().decode(T.self, from: cachedData)
-        }
-        return nil
-    }
-
-    private func cacheData<T: Codable>(_ data: T, forKey key: String) {
-        if let encoded = try? JSONEncoder().encode(data) {
-            cache.setObject(encoded as NSObject, forKey: key as NSString)
-            defaults.set(Date(), forKey: lastFetchTimeKey + key)
-        }
-    }
-
-    private func shouldRefetch(forKey key: String) -> Bool {
-        guard let lastFetch = defaults.object(forKey: lastFetchTimeKey + key) as? Date else {
-            return true
-        }
-        return Date().timeIntervalSince(lastFetch) > cacheExpirationInterval
-    }
-    
-    // Add method to clear cache
-    func clearCache() {
-        print("DataManager: Clearing cache")
-        cache.removeAllObjects()
-        let domain = Bundle.main.bundleIdentifier!
-        let dictionary = defaults.dictionaryRepresentation()
-        dictionary.keys.filter { $0.hasPrefix(lastFetchTimeKey) }.forEach { key in
-            defaults.removeObject(forKey: key)
-        }
-        
-        // Clear local storage
-        localStorage.clearAll()
-    }
-
-    // Add method to update session cache after modifications
-    func updateSessionCache(clientId: String, sessions: [Session]) {
-        let cacheKey = "sessions_\(clientId)"
-        cacheData(sessions, forKey: cacheKey)
-        localStorage.save(sessions, forKey: cacheKey)
     }
 }

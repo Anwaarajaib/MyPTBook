@@ -40,7 +40,12 @@ export const getNutritionByClient = async (req, res) => {
 
         const nutritionPlan = await Nutrition.findOne({ client: clientId });
         if (!nutritionPlan) {
-            return res.status(404).json({ message: 'Nutrition plan not found for this client' });
+            // Return empty nutrition plan with consistent format
+            return res.status(200).json({
+                _id: "",
+                client: clientId,
+                meals: []
+            });
         }
 
         res.status(200).json(nutritionPlan);
