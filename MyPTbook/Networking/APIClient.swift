@@ -403,7 +403,28 @@ class APIClient {
     
     func deleteExercise(exerciseId: String) async throws {
         let url = URL(string: "\(baseURL)/exercise/\(exerciseId)")!
-        try await delete(url: url)
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        if let token = DataManager.shared.getAuthToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        print("APIClient: Deleting exercise")
+        let (_, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.networkError(NSError(domain: "", code: -1))
+        }
+        
+        switch httpResponse.statusCode {
+        case 200...299:
+            print("APIClient: Exercise deleted successfully")
+            return
+        case 401:
+            throw APIError.unauthorized
+        default:
+            throw APIError.serverError("Server error: \(httpResponse.statusCode)")
+        }
     }
     
     func fetchSessionExercises(sessionId: String) async throws -> [Exercise] {
@@ -830,6 +851,31 @@ class APIClient {
             return updatedExercise
         case 401:
             throw APIError.unauthorized
+        default:
+            throw APIError.serverError("Server error: \(httpResponse.statusCode)")
+        }
+    }
+    
+    private func handleResponse<T: Decodable>(_ data: Data, _ httpResponse: HTTPURLResponse) async throws -> T {
+        switch httpResponse.statusCode {
+        case 200...299:
+            do {
+                // Properly handle the throwing call
+                try await DataManager.shared.refreshTokenIfNeeded()
+                return try JSONDecoder().decode(T.self, from: data)
+            } catch {
+                print("APIClient: Decoding error:", error)
+                throw APIError.decodingError
+            }
+        case 401:
+            // Try to refresh token before throwing unauthorized
+            do {
+                try await DataManager.shared.refreshTokenIfNeeded()
+                // After refreshing token, try to decode the response again
+                return try JSONDecoder().decode(T.self, from: data)
+            } catch {
+                throw APIError.unauthorized
+            }
         default:
             throw APIError.serverError("Server error: \(httpResponse.statusCode)")
         }

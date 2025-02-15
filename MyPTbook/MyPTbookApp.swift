@@ -1,10 +1,3 @@
-//
-//  MyPTbookApp.swift
-//  MyPTbook
-//
-//  Created by Mohammed Anwaar Ajaib on 26/11/2024.
-//
-
 import SwiftUI
 
 @main
@@ -17,6 +10,8 @@ struct MyPTbookApp: App {
             if !hasCompletedOnboarding {
                 OnboardingView(steps: onboardingSteps) { 
                     hasCompletedOnboarding = true
+                    // Force view update after completing onboarding
+                    authManager.objectWillChange.send()
                 }
             } else if authManager.isAuthenticated {
                 MainAppView()

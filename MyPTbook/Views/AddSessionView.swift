@@ -56,6 +56,9 @@ struct AddSessionView: View {
     // Add state variable for metric type
     @State private var exerciseMetricTypes: [ExerciseMetricType] = []
     
+    // Add this focus state
+    @FocusState private var focusedField: Bool
+    
     // Initialize with one empty exercise
     init(client: Client) {
         self.client = client
@@ -67,7 +70,7 @@ struct AddSessionView: View {
     }
     
     var body: some View {
-        NavigationStack {
+        NavigationView {
             ZStack(alignment: .bottom) {
                 ScrollView {
                     VStack(spacing: 16) {
@@ -114,6 +117,11 @@ struct AddSessionView: View {
                     .padding(.vertical)
                 }
                 .background(Colors.background)
+                // Move the tap gesture here and make it only dismiss keyboard
+                .onTapGesture {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                  to: nil, from: nil, for: nil)
+                }
                 
                 // Bottom Save Button
                 saveButton
@@ -124,7 +132,10 @@ struct AddSessionView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        focusedField = false
+                        dismiss()
+                    }
                 }
             }
             .alert("Error", isPresented: $showingError) {
@@ -133,6 +144,9 @@ struct AddSessionView: View {
                 Text(error ?? "An unknown error occurred")
             }
         }
+        .interactiveDismissDisabled()
+        // Remove the tap gesture from here
+        .preferredColorScheme(.light)  // Force light mode for this view
     }
     
     private func exerciseRow(exercise: Exercise, index: Int) -> some View {
@@ -197,6 +211,7 @@ struct AddSessionView: View {
                                 updatedExercise.exerciseName = newValue
                                 exercises[index] = updatedExercise
                             }
+                            .focused($focusedField)
                     }
                     
                     Button(action: {
@@ -232,12 +247,12 @@ struct AddSessionView: View {
                                 .keyboardType(.numberPad)
                                 .multilineTextAlignment(.center)
                                 .foregroundColor(.primary)
-                                .focused($focusedSetsField, equals: index)
+                                .focused($focusedField)
                                 .overlay(
                                     Text("Sets")
                                         .font(.body.bold())
                                         .foregroundColor(Color(.placeholderText))
-                                        .opacity(exerciseSets[index].isEmpty && focusedSetsField != index ? 1 : 0)
+                                        .opacity(exerciseSets[index].isEmpty ? 1 : 0)
                                 )
                                 .onChange(of: exerciseSets[index]) { _, newValue in
                                     if let value = Int(newValue.trimmingCharacters(in: .whitespaces)) {
@@ -250,6 +265,12 @@ struct AddSessionView: View {
                         
                         // Reps/Time Input
                         HStack(spacing: 8) {
+                            // Add the icon here
+                            Image(systemName: exerciseMetricTypes[index] == .reps ? 
+                                  "figure.strengthtraining.traditional" : "clock")
+                                .foregroundColor(Colors.nasmBlue)
+                                .imageScale(.large)
+                            
                             TextField("", text: $exerciseReps[index])
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
                                 .frame(width: 60, height: 32)
@@ -257,7 +278,7 @@ struct AddSessionView: View {
                                 .keyboardType(.numberPad)
                                 .multilineTextAlignment(.center)
                                 .overlay(
-                                    Text(exerciseMetricTypes[index] == .reps ? "Reps" : "Sec")
+                                    Text(exerciseMetricTypes[index] == .reps ? "Reps" : "Secs")
                                         .font(.body.bold())
                                         .foregroundColor(Color(.placeholderText))
                                         .opacity(exerciseReps[index].isEmpty ? 1 : 0)
@@ -299,11 +320,13 @@ struct AddSessionView: View {
                     }
                     .padding(.leading, 30)
                 } else {
-                    // Only show reps for grouped exercises
+                    // Show reps/time for grouped exercises
                     HStack(spacing: 24) {
-                        // Reps only
+                        // Reps/Time Input
                         HStack(spacing: 8) {
-                            Image(systemName: "figure.strengthtraining.traditional")
+                            // Add the icon here
+                            Image(systemName: exerciseMetricTypes[index] == .reps ? 
+                                  "figure.strengthtraining.traditional" : "clock")
                                 .foregroundColor(Colors.nasmBlue)
                                 .imageScale(.large)
                             
@@ -313,21 +336,43 @@ struct AddSessionView: View {
                                 .font(.body.bold())
                                 .keyboardType(.numberPad)
                                 .multilineTextAlignment(.center)
-                                .foregroundColor(.primary)
-                                .focused($focusedRepsField, equals: index)
                                 .overlay(
-                                    Text("Reps")
+                                    Text(exerciseMetricTypes[index] == .reps ? "Reps" : "Secs")
                                         .font(.body.bold())
                                         .foregroundColor(Color(.placeholderText))
-                                        .opacity(exerciseReps[index].isEmpty && focusedRepsField != index ? 1 : 0)
+                                        .opacity(exerciseReps[index].isEmpty ? 1 : 0)
                                 )
-                                .onChange(of: exerciseReps[index]) { _, newValue in
-                                    if let value = Int(newValue.trimmingCharacters(in: .whitespaces)) {
+                            
+                            // Type selector
+                            HStack(spacing: 0) {
+                                ForEach([ExerciseMetricType.reps, .time], id: \.self) { type in
+                                    Button(action: {
+                                        exerciseMetricTypes[index] = type
                                         var updatedExercise = exercises[index]
-                                        updatedExercise.reps = value
+                                        if type == .reps {
+                                            updatedExercise.reps = Int(exerciseReps[index]) ?? 0
+                                            updatedExercise.time = nil
+                                        } else {
+                                            updatedExercise.time = Int(exerciseReps[index])
+                                            updatedExercise.reps = 0
+                                        }
                                         exercises[index] = updatedExercise
+                                    }) {
+                                        Text(type == .reps ? "Reps" : "Time")
+                                            .font(.footnote.bold())
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 8)
+                                            .background(exerciseMetricTypes[index] == type ? Colors.nasmBlue : Color.clear)
+                                            .foregroundColor(exerciseMetricTypes[index] == type ? .white : Colors.nasmBlue)
                                     }
                                 }
+                            }
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Colors.nasmBlue, lineWidth: 1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .frame(width: 120)
                         }
                         
                         Spacer()
@@ -361,7 +406,11 @@ struct AddSessionView: View {
             // Exercise Type Picker
             HStack(spacing: 0) {
                 ForEach([ExerciseType.single, .superset, .circuit], id: \.self) { type in
-                    Button(action: { selectedExerciseType = type }) {
+                    Button(action: { 
+                        withAnimation {
+                            selectedExerciseType = type
+                        }
+                    }) {
                         HStack(spacing: 4) {
                             Image(systemName: type.icon)
                                 .imageScale(.small)
@@ -373,6 +422,7 @@ struct AddSessionView: View {
                         .background(selectedExerciseType == type ? Colors.nasmBlue : Color.clear)
                         .foregroundColor(selectedExerciseType == type ? .white : Colors.nasmBlue)
                     }
+                    .buttonStyle(BorderlessButtonStyle())
                 }
             }
             .background(
@@ -382,15 +432,17 @@ struct AddSessionView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .padding(.horizontal, 20)
             
-            // Original style Add Exercise Button
+            // Add Exercise Button
             Button(action: {
-                switch selectedExerciseType {
-                case .single:
-                    addNewExercise()
-                case .superset:
-                    addNewExerciseGroup(.superset)
-                case .circuit:
-                    addNewExerciseGroup(.circuit)
+                withAnimation {
+                    switch selectedExerciseType {
+                    case .single:
+                        addNewExercise()
+                    case .superset:
+                        addNewExerciseGroup(.superset)
+                    case .circuit:
+                        addNewExerciseGroup(.circuit)
+                    }
                 }
             }) {
                 HStack {
@@ -400,6 +452,7 @@ struct AddSessionView: View {
                 .foregroundColor(Colors.nasmBlue)
                 .padding(.vertical, 12)
             }
+            .buttonStyle(BorderlessButtonStyle())
         }
     }
     
@@ -548,29 +601,26 @@ struct AddSessionView: View {
                 
                 // 2. Create exercises sequentially to maintain order
                 for index in 0..<exercises.count {
-                    let exercise = Exercise(
-                        _id: "",
-                        exerciseName: exerciseNames[index],
-                        sets: Int(exerciseSets[index]) ?? 0,
-                        reps: Int(exerciseReps[index]) ?? 0,
-                        weight: 0,
-                        time: nil,
-                        groupType: exerciseGroupTypes[index],
-                        groupId: exercises[index].groupId,  // Add this line to include groupId
-                        session: newSession._id
-                    )
+                    let exerciseValue = Int(exerciseReps[index]) ?? 0
                     
-                    // Create exercise data dictionary with all fields including groupId
-                    let exerciseData: [String: Any] = [
-                        "exerciseName": exercise.exerciseName,
-                        "sets": exercise.sets,
-                        "reps": exercise.reps,
-                        "weight": exercise.weight,
-                        "time": exercise.time as Any,
-                        "groupType": exercise.groupType?.rawValue as Any,
-                        "groupId": exercise.groupId as Any,  // Include groupId in the request
-                        "session": exercise.session
+                    // Create exercise data dictionary with proper handling of reps vs time
+                    var exerciseData: [String: Any] = [
+                        "exerciseName": exerciseNames[index],
+                        "sets": Int(exerciseSets[index]) ?? 0,
+                        "weight": 0,
+                        "groupType": exerciseGroupTypes[index]?.rawValue as Any,
+                        "groupId": exercises[index].groupId as Any,
+                        "session": newSession._id
                     ]
+                    
+                    // Add either reps or time based on the metric type
+                    if exerciseMetricTypes[index] == .reps {
+                        exerciseData["reps"] = exerciseValue
+                        exerciseData["time"] = nil
+                    } else {
+                        exerciseData["time"] = exerciseValue
+                        exerciseData["reps"] = 0
+                    }
                     
                     _ = try await dataManager.createExercise(exerciseData: exerciseData)
                 }

@@ -12,6 +12,21 @@ class AuthManager: ObservableObject {
         if isAuthenticated {
             print("AuthManager: Current user - Name:", dataManager.userName, "Email:", dataManager.userEmail)
         }
+        
+        // Add observer for token expiration
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("TokenExpired"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleTokenExpiration()
+        }
+    }
+    
+    private func handleTokenExpiration() {
+        print("AuthManager: Token expired, logging out")
+        dataManager.logout()
+        isAuthenticated = false
     }
     
     func login(email: String, password: String) async throws {

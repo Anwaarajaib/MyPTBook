@@ -311,47 +311,42 @@ class PDFGenerator {
             
             // Draw sessions
             for session in numberedSessions {
+                // Calculate total height needed for this session
+                let estimatedExerciseHeight: CGFloat = 30  // Height per exercise
+                let estimatedHeaderHeight: CGFloat = 100   // Height for session header, title, etc.
+                let totalEstimatedHeight = estimatedHeaderHeight + 
+                    (CGFloat(session.exercises.count) * estimatedExerciseHeight)
+                
+                // Check if we need a page break
+                if yPosition + totalEstimatedHeight > pageHeight - margin - 100 {
+                    context.beginPage()
+                    yPosition = margin + 50
+                }
+                
                 // Calculate session title height
                 let sessionTitle = "Session \(session.sessionNumber): \(session.workoutName)"
                 let titleAttributes: [NSAttributedString.Key: Any] = [
                     .font: sectionHeaderFont,
                     .foregroundColor: nasmBlue
                 ]
-                let titleSize = (sessionTitle as NSString).boundingRect(
-                    with: CGSize(width: contentWidth - 40, height: .greatestFiniteMagnitude),
-                    options: [.usesLineFragmentOrigin, .usesFontLeading],
-                    attributes: titleAttributes,
-                    context: nil
-                )
                 
-                // Calculate card height with padding (20 points total - 10 top and bottom)
-                let cardHeight = ceil(titleSize.height) + 20
-                
-                // Draw session card with dynamic height
-                let cardPath = UIBezierPath(roundedRect: CGRect(x: margin, y: yPosition, 
-                                                              width: contentWidth, height: cardHeight),
-                                          cornerRadius: 8)
-                nasmBlue.withAlphaComponent(0.1).setFill()
-                cardPath.fill()
-                
-                // Draw session header centered vertically in the card
-                let titleY = yPosition + (cardHeight - titleSize.height) / 2
+                // Draw session title
                 sessionTitle.draw(
-                    at: CGPoint(x: margin + 20, y: titleY),
+                    at: CGPoint(x: margin + 20, y: yPosition),
                     withAttributes: titleAttributes
                 )
                 
-                // Adjust yPosition to account for the dynamic card height
-                yPosition += cardHeight + 10  // Add 10 points spacing after the card
+                yPosition += 40  // Add space after title
                 
                 // Draw exercise table headers
-                let tableHeaders = ["Exercise", "Sets", "Reps/Secs"]
+                let tableHeaders = ["Exercise", "Sets", "Reps/Time"]
                 let columnWidths: [CGFloat] = [
                     contentWidth * 0.6,
                     contentWidth * 0.15,
                     contentWidth * 0.15
                 ]
                 
+                // Draw headers
                 for (index, header) in tableHeaders.enumerated() {
                     let headerX = if index == 0 {
                         margin + 20
@@ -361,11 +356,13 @@ class PDFGenerator {
                         pageWidth - margin - columnWidths[2] - 20
                     }
                     
-                    header.draw(at: CGPoint(x: headerX, y: yPosition),
-                              withAttributes: [
-                                .font: bodyFont.bold(),
-                                .foregroundColor: nasmBlue
-                              ])
+                    header.draw(
+                        at: CGPoint(x: headerX, y: yPosition),
+                        withAttributes: [
+                            .font: bodyFont.bold(),
+                            .foregroundColor: nasmBlue
+                        ]
+                    )
                 }
                 
                 yPosition += 25
@@ -381,170 +378,91 @@ class PDFGenerator {
                 yPosition += 10
                 
                 // Draw exercises
-                var currentGroupType: Exercise.GroupType?
-                var currentGroupExercises: [Exercise] = []
                 var exerciseNumber = 1
-
+                var currentGroupId: String?
+                var currentGroupExercises: [Exercise] = []
+                
                 for (index, exercise) in session.exercises.enumerated() {
-                    // Check for new group type or end of current group
-                    let isNewGroup = exercise.groupType != currentGroupType
-                    let isLastExercise = index == session.exercises.count - 1
-                    
-                    // If we have a current group and either starting new group or last exercise
-                    if !currentGroupExercises.isEmpty && (isNewGroup || isLastExercise) {
-                        // Add last exercise to group if it belongs to current group
-                        if !isNewGroup && isLastExercise {
-                            currentGroupExercises.append(exercise)
-                        }
-                        
-                        // Draw group header
-                        let headerHeight: CGFloat = 30
-                        let headerRect = CGRect(x: margin, y: yPosition, 
-                                              width: contentWidth, height: headerHeight)
-                        nasmBlue.withAlphaComponent(0.05).setFill()
-                        UIBezierPath(roundedRect: headerRect, cornerRadius: 6).fill()
-                        
-                        // Draw exercise number for the group
-                        "\(exerciseNumber).".draw(
-                            at: CGPoint(x: margin + 5, y: yPosition + 6),
-                            withAttributes: [
-                                .font: bodyFont,
-                                .foregroundColor: nasmBlue
-                            ]
-                        )
-                        exerciseNumber += 1
-                        
-                        // Prepare header text with sets
-                        let groupTypeText = currentGroupType == .circuit ? "Circuit" : "Superset"
-                        let sets = currentGroupExercises.first?.sets ?? 0
-                        let headerText = "\(groupTypeText) - \(sets) Sets"
-                        
-                        // Draw header text (adjusted x position to account for number)
-                        headerText.draw(
-                            at: CGPoint(x: margin + 25, y: yPosition + 6),
-                            withAttributes: [
-                                .font: bodyFont.bold(),
-                                .foregroundColor: nasmBlue
-                            ]
-                        )
-                        
-                        yPosition += headerHeight + 10
-                        
-                        // Check for page break after group header
-                        if yPosition > pageHeight - margin - 50 {
-                            context.beginPage()
-                            yPosition = margin + 50
-                        }
-                        
-                        // Draw exercises in the group
-                        for groupExercise in currentGroupExercises {
-                            // Draw bullet point for grouped exercise
-                            "•".draw(
-                                at: CGPoint(x: margin + 25, y: yPosition),
-                                withAttributes: [
-                                    .font: bodyFont,
-                                    .foregroundColor: nasmBlue
-                                ]
-                            )
-                            
-                            // Exercise name with indentation
-                            groupExercise.exerciseName.draw(
-                                at: CGPoint(x: margin + 40, y: yPosition),
-                                withAttributes: [
-                                    .font: bodyFont,
-                                    .foregroundColor: UIColor.black
-                                ]
-                            )
-                            
-                            // Reps/Time
-                            let valueText = if let time = groupExercise.time {
-                                "\(time) Secs"
-                            } else {
-                                "\(groupExercise.reps) Reps"
-                            }
-                            
-                            valueText.draw(
-                                at: CGPoint(x: pageWidth - margin - columnWidths[2] - 20, y: yPosition),
-                                withAttributes: [
-                                    .font: bodyFont,
-                                    .foregroundColor: UIColor.black
-                                ]
-                            )
-                            
-                            yPosition += 30
-                        }
-                        
-                        // Add spacing after group
-                        yPosition += 10
-                        
-                        // Clear current group
-                        currentGroupExercises.removeAll()
+                    // Check for page break
+                    if yPosition > pageHeight - margin - 100 {
+                        context.beginPage()
+                        yPosition = margin + 50
                     }
                     
-                    // Handle new group or regular exercise
                     if let groupType = exercise.groupType {
-                        if isNewGroup {
-                            currentGroupType = groupType
+                        // Handle grouped exercises
+                        if exercise.groupId != currentGroupId {
+                            // Draw previous group if exists
+                            if !currentGroupExercises.isEmpty {
+                                drawExerciseGroup(
+                                    exercises: currentGroupExercises,
+                                    type: currentGroupExercises[0].groupType!,
+                                    at: &yPosition,
+                                    number: &exerciseNumber,
+                                    pageWidth: pageWidth,
+                                    margin: margin,
+                                    columnWidths: columnWidths,
+                                    bodyFont: bodyFont,
+                                    nasmBlue: nasmBlue
+                                )
+                            }
+                            // Start new group
+                            currentGroupId = exercise.groupId
                             currentGroupExercises = [exercise]
                         } else {
+                            // Add to current group
                             currentGroupExercises.append(exercise)
                         }
+                        
+                        // Draw final group if it's the last exercise
+                        if index == session.exercises.count - 1 && !currentGroupExercises.isEmpty {
+                            drawExerciseGroup(
+                                exercises: currentGroupExercises,
+                                type: groupType,
+                                at: &yPosition,
+                                number: &exerciseNumber,
+                                pageWidth: pageWidth,
+                                margin: margin,
+                                columnWidths: columnWidths,
+                                bodyFont: bodyFont,
+                                nasmBlue: nasmBlue
+                            )
+                        }
                     } else {
-                        // Regular exercise (not in a group)
-                        // Draw exercise number
-                        "\(exerciseNumber).".draw(
-                            at: CGPoint(x: margin + 5, y: yPosition),
-                            withAttributes: [
-                                .font: bodyFont,
-                                .foregroundColor: nasmBlue
-                            ]
-                        )
-                        exerciseNumber += 1
-                        
-                        // Exercise name
-                        exercise.exerciseName.draw(
-                            at: CGPoint(x: margin + 20, y: yPosition),
-                            withAttributes: [
-                                .font: bodyFont,
-                                .foregroundColor: UIColor.black
-                            ]
-                        )
-                        
-                        // Sets
-                        String(exercise.sets).draw(
-                            at: CGPoint(x: pageWidth - margin - (columnWidths[2] + columnWidths[1]) - 20, y: yPosition),
-                            withAttributes: [
-                                .font: bodyFont,
-                                .foregroundColor: UIColor.black
-                            ]
-                        )
-                        
-                        // Reps/Time
-                        let valueText = if let time = exercise.time {
-                            "\(time) Secs"
-                        } else {
-                            "\(exercise.reps) Reps"
+                        // Draw any pending group before drawing single exercise
+                        if !currentGroupExercises.isEmpty {
+                            drawExerciseGroup(
+                                exercises: currentGroupExercises,
+                                type: currentGroupExercises[0].groupType!,
+                                at: &yPosition,
+                                number: &exerciseNumber,
+                                pageWidth: pageWidth,
+                                margin: margin,
+                                columnWidths: columnWidths,
+                                bodyFont: bodyFont,
+                                nasmBlue: nasmBlue
+                            )
+                            currentGroupExercises = []
+                            currentGroupId = nil
                         }
                         
-                        valueText.draw(
-                            at: CGPoint(x: pageWidth - margin - columnWidths[2] - 20, y: yPosition),
-                            withAttributes: [
-                                .font: bodyFont,
-                                .foregroundColor: UIColor.black
-                            ]
+                        // Draw single exercise
+                        drawSingleExercise(
+                            exercise,
+                            number: exerciseNumber,
+                            at: &yPosition,
+                            pageWidth: pageWidth,
+                            margin: margin,
+                            columnWidths: columnWidths,
+                            bodyFont: bodyFont,
+                            nasmBlue: nasmBlue
                         )
-                        
-                        yPosition += 30
+                        exerciseNumber += 1
                     }
                 }
                 
-                yPosition += 40  // Space between sessions
-                
-                // Check if we need a new page for the next session
-                if yPosition > pageHeight - margin - 150 && session.id != sessions.last?.id {
-                    context.beginPage()
-                    yPosition = margin + 50
-                }
+                // Add extra space between sessions
+                yPosition += 40
             }
             
             // Draw footer
@@ -560,6 +478,131 @@ class PDFGenerator {
                 withAttributes: footerAttr
             )
         }
+    }
+    
+    private static func drawExerciseGroup(
+        exercises: [Exercise],
+        type: Exercise.GroupType,
+        at yPosition: inout CGFloat,
+        number: inout Int,
+        pageWidth: CGFloat,
+        margin: CGFloat,
+        columnWidths: [CGFloat],
+        bodyFont: UIFont,
+        nasmBlue: UIColor
+    ) {
+        // Draw group number
+        "\(number).".draw(
+            at: CGPoint(x: margin + 20, y: yPosition),
+            withAttributes: [.font: bodyFont.bold(), .foregroundColor: nasmBlue]
+        )
+
+        // Draw icon and title
+        let groupIcon = type == .circuit ? "arrow.3.trianglepath" : "arrow.triangle.2.circlepath"
+        if let iconImage = UIImage(systemName: groupIcon) {
+            let iconSize: CGFloat = 20
+            let iconRect = CGRect(x: margin + 45, y: yPosition, width: iconSize, height: iconSize)
+            
+            // Create a tinted version of the icon
+            let renderer = UIGraphicsImageRenderer(size: iconImage.size)
+            let tintedIcon = renderer.image { context in
+                nasmBlue.setFill()
+                iconImage.draw(in: CGRect(origin: .zero, size: iconImage.size))
+            }
+            
+            tintedIcon.draw(in: iconRect)
+            
+            // Draw group type title after icon
+            let typeTitle = type == .circuit ? "Circuit" : "Superset"
+            typeTitle.draw(
+                at: CGPoint(x: margin + 45 + iconSize + 8, y: yPosition),
+                withAttributes: [.font: bodyFont.bold(), .foregroundColor: nasmBlue]
+            )
+        }
+        
+        // Draw sets count in the sets column
+        let setsText = "\(exercises.first?.sets ?? 0)"
+        setsText.draw(
+            at: CGPoint(x: pageWidth - margin - (columnWidths[2] + columnWidths[1]) - 20, y: yPosition),
+            withAttributes: [.font: bodyFont, .foregroundColor: UIColor.black]
+        )
+        
+        yPosition += 25
+        
+        // Draw exercises in group
+        for exercise in exercises {
+            // Draw bullet point
+            "•".draw(
+                at: CGPoint(x: margin + 45, y: yPosition),
+                withAttributes: [.font: bodyFont.bold(), .foregroundColor: nasmBlue]
+            )
+            
+            // Draw exercise name
+            exercise.exerciseName.draw(
+                at: CGPoint(x: margin + 65, y: yPosition),
+                withAttributes: [.font: bodyFont, .foregroundColor: UIColor.black]
+            )
+            
+            // Draw reps/time
+            let valueText = if let time = exercise.time {
+                "\(time) Secs"
+            } else {
+                "\(exercise.reps) Reps"
+            }
+            
+            valueText.draw(
+                at: CGPoint(x: pageWidth - margin - columnWidths[2] - 20, y: yPosition),
+                withAttributes: [.font: bodyFont, .foregroundColor: UIColor.black]
+            )
+            
+            yPosition += 25
+        }
+        
+        yPosition += 10
+        number += 1
+    }
+    
+    private static func drawSingleExercise(
+        _ exercise: Exercise,
+        number: Int,
+        at yPosition: inout CGFloat,
+        pageWidth: CGFloat,
+        margin: CGFloat,
+        columnWidths: [CGFloat],
+        bodyFont: UIFont,
+        nasmBlue: UIColor
+    ) {
+        // Draw exercise number
+        "\(number).".draw(
+            at: CGPoint(x: margin + 20, y: yPosition),
+            withAttributes: [.font: bodyFont.bold(), .foregroundColor: nasmBlue]
+        )
+        
+        // Draw exercise name
+        exercise.exerciseName.draw(
+            at: CGPoint(x: margin + 40, y: yPosition),
+            withAttributes: [.font: bodyFont, .foregroundColor: UIColor.black]
+        )
+        
+        // Draw sets
+        String(exercise.sets).draw(
+            at: CGPoint(x: pageWidth - margin - (columnWidths[2] + columnWidths[1]) - 20, y: yPosition),
+            withAttributes: [.font: bodyFont, .foregroundColor: UIColor.black]
+        )
+        
+        // Draw reps/time
+        let valueText = if let time = exercise.time {
+            "\(time) Secs"
+        } else {
+            "\(exercise.reps) Reps"
+        }
+        
+        valueText.draw(
+            at: CGPoint(x: pageWidth - margin - columnWidths[2] - 20, y: yPosition),
+            withAttributes: [.font: bodyFont, .foregroundColor: UIColor.black]
+        )
+        
+        yPosition += 30
     }
     
     private static func getTextWidth(_ text: String, with attributes: [NSAttributedString.Key: Any]) -> CGFloat {

@@ -17,6 +17,7 @@ struct UserProfileView: View {
     @State private var profileImageUrl: String?
     @State private var error: String?
     @State private var showAlert = false
+    @State private var showCameraAlert = false
     @State private var isLoading = false
     @State private var alertMessage = ""
     
@@ -40,7 +41,7 @@ struct UserProfileView: View {
                 ImagePicker(
                     image: $selectedImage,
                     sourceType: .photoLibrary,
-                    showAlert: $showAlert,
+                    showAlert: $showCameraAlert,
                     alertMessage: $alertMessage
                 )
             }
@@ -48,7 +49,7 @@ struct UserProfileView: View {
                 ImagePicker(
                     image: $selectedImage,
                     sourceType: .camera,
-                    showAlert: $showAlert,
+                    showAlert: $showCameraAlert,
                     alertMessage: $alertMessage
                 )
             }
@@ -58,7 +59,7 @@ struct UserProfileView: View {
                     profileImage = Image(uiImage: image)
                 }
             }
-            .alert("Camera Access", isPresented: $showAlert) {
+            .alert("Camera Access", isPresented: $showCameraAlert) {
                 Button("Settings", action: {
                     if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
                         UIApplication.shared.open(settingsUrl)
@@ -148,51 +149,53 @@ struct UserProfileView: View {
                 fallbackImageView
             }
             
-            Button(action: {
-                if DesignSystem.isIPad {
-                    showingPopover = true
-                } else {
-                    showingActionSheet = true
-                }
-            }) {
-                Image(systemName: "camera")
-                    .font(.system(size: 18))
-                    .foregroundColor(Colors.nasmBlue)
-                    .padding(7)
-                    .background(Color.white)
-                    .clipShape(Circle())
-                    .shadow(color: .gray.opacity(0.3), radius: 4, x: 0, y: 2)
-            }
-            .offset(x: 35, y: 35)
-            .popover(isPresented: $showingPopover,
-                     attachmentAnchor: .point(.topTrailing),
-                     arrowEdge: .leading) {
-                VStack(spacing: 0) {
-                    Button(action: { 
-                        showingPopover = false
-                        showingCamera = true 
-                    }) {
-                        Text("Take Photo")
-                            .font(.system(size: 17))
-                            .foregroundColor(.blue)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
+            if isEditing {
+                Button(action: {
+                    if DesignSystem.isIPad {
+                        showingPopover = true
+                    } else {
+                        showingActionSheet = true
                     }
-                    
-                    Divider()
-                    
-                    Button(action: { 
-                        showingPopover = false
-                        showingImagePicker = true 
-                    }) {
-                        Text("Choose from Library")
-                            .font(.system(size: 17))
-                            .foregroundColor(.blue)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                    }
+                }) {
+                    Image(systemName: "camera")
+                        .font(.system(size: 18))
+                        .foregroundColor(Colors.nasmBlue)
+                        .padding(7)
+                        .background(Color.white)
+                        .clipShape(Circle())
+                        .shadow(color: .gray.opacity(0.3), radius: 4, x: 0, y: 2)
                 }
-                .frame(width: 200)
+                .offset(x: 35, y: 35)
+                .popover(isPresented: $showingPopover,
+                         attachmentAnchor: .point(.topTrailing),
+                         arrowEdge: .leading) {
+                    VStack(spacing: 0) {
+                        Button(action: { 
+                            showingPopover = false
+                            showingCamera = true 
+                        }) {
+                            Text("Take Photo")
+                                .font(.system(size: 17))
+                                .foregroundColor(.blue)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: { 
+                            showingPopover = false
+                            showingImagePicker = true 
+                        }) {
+                            Text("Choose from Library")
+                                .font(.system(size: 17))
+                                .foregroundColor(.blue)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                        }
+                    }
+                    .frame(width: 200)
+                }
             }
         }
     }

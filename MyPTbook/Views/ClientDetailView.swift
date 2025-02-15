@@ -502,8 +502,6 @@ struct ClientDetailView: View {
     
     private func handleError(_ error: Error) -> String {
         switch error {
-        case APIError.unauthorized:
-            return "Your session has expired. Please log in again"
         case APIError.serverError(let message):
             return "Server error: \(message)"
         case APIError.networkError:

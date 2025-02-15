@@ -54,33 +54,53 @@ struct NutritionView: View {
                         
                         Spacer()
                         
-                        // Edit/Save button
-                        Button(isEditing ? "Save" : "Edit") {
-                            if isEditing {
+                        // Show Save button when there are unsaved changes
+                        if viewModel.hasUnsavedChanges {
+                            Button("Save") {
                                 Task {
                                     await viewModel.saveNutrition()
-                                    isEditing = false
                                 }
-                            } else {
-                                isEditing = true
                             }
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(Colors.nasmBlue)
+                        } else if !viewModel.meals.isEmpty {
+                            // Show Edit button only for existing plans
+                            Button(isEditing ? "Save" : "Edit") {
+                                if isEditing {
+                                    Task {
+                                        await viewModel.saveNutrition()
+                                        isEditing = false
+                                    }
+                                } else {
+                                    isEditing = true
+                                }
+                            }
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(Colors.nasmBlue)
                         }
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(Colors.nasmBlue)
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 24)
                     
                     ScrollView {
                         VStack(spacing: 0) {
-                            // Meal sections
-                            ForEach(viewModel.meals) { meal in
-                                MealSection(meal: meal, viewModel: viewModel, isEditing: isEditing)
-                            }
-                            
-                            // Add new meal section at the bottom - only show when editing
-                            if isEditing {
-                                VStack(spacing: 12) {
+                            if viewModel.meals.isEmpty {
+                                // Show add meal section by default when empty
+                                AddNewMealDirectView(viewModel: viewModel)
+                                    .padding(.vertical, 16)
+                            } else {
+                                // Meal sections
+                                ForEach(viewModel.meals) { meal in
+                                    MealSection(
+                                        meal: meal, 
+                                        viewModel: viewModel, 
+                                        isEditing: isEditing || viewModel.meals.count == 1,
+                                        showAddItem: viewModel.shouldShowAddItem(for: meal)
+                                    )
+                                }
+                                
+                                // Show new meal option after adding items or when editing
+                                if viewModel.showNewMealAfterItem || isEditing {
                                     AddNewMealDirectView(viewModel: viewModel)
                                         .padding(.vertical, 16)
                                 }
@@ -214,8 +234,9 @@ struct NutritionView: View {
 struct MealSection: View {
     let meal: Nutrition.Meal
     @ObservedObject var viewModel: NutritionViewModel
-    @State private var isAddingItem = false
     let isEditing: Bool
+    let showAddItem: Bool
+    @State private var hideAddItem = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -234,12 +255,20 @@ struct MealSection: View {
                     
                     Spacer()
                     
-                    // Only show add button when editing
+                    // Only show +/- buttons in edit mode
                     if isEditing {
-                        Button(action: { isAddingItem.toggle() }) {
-                            Image(systemName: isAddingItem ? "minus.circle.fill" : "plus.circle.fill")
-                                .font(.system(size: 20))
-                                .foregroundColor(Colors.nasmBlue)
+                        if !hideAddItem {
+                            Button(action: { hideAddItem = true }) {
+                                Image(systemName: "minus.circle.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(Colors.nasmBlue)
+                            }
+                        } else {
+                            Button(action: { hideAddItem = false }) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(Colors.nasmBlue)
+                            }
                         }
                     }
                 }
@@ -250,12 +279,7 @@ struct MealSection: View {
             }
             
             // Meal items
-            if meal.items.isEmpty {
-                Text("No items added")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-                    .padding(.vertical, 4)
-            } else {
+            if !meal.items.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(meal.items) { item in
                         HStack(alignment: .top, spacing: 12) {
@@ -280,8 +304,8 @@ struct MealSection: View {
                 }
             }
             
-            // Only show add item section when editing
-            if isEditing && isAddingItem {
+            // Show add item section only in edit mode or for newly added meals
+            if (isEditing || meal.mealName == viewModel.lastAddedMeal?.mealName) && !hideAddItem {
                 AddMealItemDirectView(viewModel: viewModel, meal: meal)
             }
         }
@@ -393,39 +417,43 @@ struct CustomTextFieldStyle: TextFieldStyle {
 // Add this new view for adding meals and items directly in the UI
 struct AddMealItemDirectView: View {
     @ObservedObject var viewModel: NutritionViewModel
+    let meal: Nutrition.Meal
     @State private var newItemName = ""
     @State private var newItemQuantity = ""
-    let meal: Nutrition.Meal
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Item input fields in a horizontal layout
-            HStack(spacing: 12) {
-                // Item name field
-                TextField("Item name", text: $newItemName)
-                    .textFieldStyle(CustomTextFieldStyle())
-                    .frame(maxWidth: .infinity)
-                
-                // Quantity field
-                TextField("Quantity", text: $newItemQuantity)
-                    .textFieldStyle(CustomTextFieldStyle())
-                    .frame(width: 100)
-                
-                // Add button with proper styling
-                Button(action: addItem) {
-                    Text("Add")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(newItemName.isEmpty || newItemQuantity.isEmpty ? 
-                                    Colors.nasmBlue.opacity(0.5) : Colors.nasmBlue)
-                        )
-                }
-                .disabled(newItemName.isEmpty || newItemQuantity.isEmpty)
+        HStack(spacing: 12) {
+            // Item name field
+            TextField("Item Name", text: $newItemName)
+                .textFieldStyle(CustomTextFieldStyle())
+                .frame(maxWidth: .infinity)
+            
+            // Quantity field
+            TextField("Quantity", text: $newItemQuantity)
+                .textFieldStyle(CustomTextFieldStyle())
+                .frame(width: 100)
+            
+            // Add button with proper styling
+            Button(action: {
+                addItem()
+                // Clear fields after adding
+                newItemName = ""
+                newItemQuantity = ""
+                // Show new meal option after adding item
+                viewModel.showNewMealAfterItem = true
+            }) {
+                Text("Add")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(newItemName.isEmpty || newItemQuantity.isEmpty ? 
+                                Colors.nasmBlue.opacity(0.5) : Colors.nasmBlue)
+                    )
             }
+            .disabled(newItemName.isEmpty || newItemQuantity.isEmpty)
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
@@ -433,8 +461,6 @@ struct AddMealItemDirectView: View {
     
     private func addItem() {
         viewModel.addItemDirect(to: meal, name: newItemName, quantity: newItemQuantity)
-        newItemName = ""
-        newItemQuantity = ""
     }
 }
 
@@ -490,6 +516,9 @@ class NutritionViewModel: ObservableObject {
     @Published var selectedMeal: Nutrition.Meal?
     @Published var error: String?
     @Published var isLoading = false
+    @Published var lastAddedMeal: Nutrition.Meal?
+    @Published var showNewMealAfterItem = false
+    @Published var hasUnsavedChanges = false
     
     var nutritionId: String?
     private var clientId: String = ""
@@ -526,23 +555,40 @@ class NutritionViewModel: ObservableObject {
     
     @MainActor
     func saveNutrition() async {
+        print("Starting to save nutrition plan")
         do {
-            let updatedMeals = meals // Capture current state
-            if let nutritionId = nutritionId {
+            let updatedMeals = meals
+            print("Meals to save:", updatedMeals)
+            
+            // Check if nutritionId is valid (not empty string)
+            if let nutritionId = nutritionId, !nutritionId.isEmpty {
+                print("Updating existing nutrition plan with ID:", nutritionId)
                 let updatedNutrition = try await APIClient.shared.updateNutrition(
                     nutritionId: nutritionId,
                     meals: updatedMeals
                 )
                 self.meals = updatedNutrition.meals
+                print("Successfully updated nutrition plan")
             } else {
+                print("Creating new nutrition plan for client:", clientId)
                 let newNutrition = try await APIClient.shared.createNutrition(
                     clientId: clientId,
                     meals: updatedMeals
                 )
                 self.meals = newNutrition.meals
                 self.nutritionId = newNutrition._id
+                print("Successfully created new nutrition plan with ID:", newNutrition._id)
             }
+            hasUnsavedChanges = false
+            
+            // Notify that nutrition data has changed
+            NotificationCenter.default.post(
+                name: NSNotification.Name("RefreshClientData"),
+                object: nil,
+                userInfo: ["clientId": clientId]
+            )
         } catch {
+            print("Error saving nutrition plan:", error)
             self.error = error.localizedDescription
         }
     }
@@ -592,9 +638,8 @@ class NutritionViewModel: ObservableObject {
         guard !name.isEmpty else { return }
         let newMeal = Nutrition.Meal(mealName: name)
         meals.append(newMeal)
-        Task {
-            await saveNutrition()
-        }
+        lastAddedMeal = newMeal
+        hasUnsavedChanges = true  // Mark as having unsaved changes
     }
     
     @MainActor
@@ -605,8 +650,12 @@ class NutritionViewModel: ObservableObject {
         
         let newItem = Nutrition.MealItem(name: name, quantity: quantity)
         meals[index].items.append(newItem)
-        Task {
-            await saveNutrition()
-        }
+        showNewMealAfterItem = true
+        hasUnsavedChanges = true  // Mark as having unsaved changes
+    }
+    
+    func shouldShowAddItem(for meal: Nutrition.Meal) -> Bool {
+        // Show add item if this is the last added meal and it has no items
+        return meal.items.isEmpty && meal.mealName == lastAddedMeal?.mealName
     }
 } 

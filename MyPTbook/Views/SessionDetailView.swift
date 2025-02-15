@@ -114,6 +114,20 @@ struct SessionDetailView: View {
         .task {
             await fetchExercises()
         }
+        .onAppear {
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("UpdateExercise"),
+                object: nil,
+                queue: .main
+            ) { notification in
+                if let updatedExercise = notification.object as? Exercise {
+                    if let index = exercises.firstIndex(where: { $0._id == updatedExercise._id }) {
+                        exercises[index] = updatedExercise
+                    }
+                }
+            }
+        }
+        .preferredColorScheme(.light)  // Force light mode for this view
     }
     
     private var headerView: some View {
@@ -293,9 +307,21 @@ struct SessionDetailView: View {
                         if isEditing {
                             TextField("Exercise Name", text: exerciseNameBinding)
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .font(.body.bold())
+                            
+                            // Add delete button
+                            Button(action: {
+                                Task {
+                                    await deleteExercise(exercise)
+                                }
+                            }) {
+                                Image(systemName: "trash")
+                                    .foregroundColor(.red)
+                            }
+                            .padding(.horizontal, 8)
                         } else {
                             Text(exerciseNames[index])
-                                .font(.body)
+                                .font(.body.bold())
                         }
                         
                         Spacer()
@@ -308,16 +334,18 @@ struct SessionDetailView: View {
                             isEditing: isEditing,
                             exerciseSets: exerciseSetsBinding,
                             exerciseReps: exerciseRepsBinding,
-                            exerciseMetricType: exerciseMetricTypeBinding
+                            exerciseMetricType: exerciseMetricTypeBinding,
+                            updateExercise: updateExerciseOnServer
                         )
                         
                         // Keep the rest of your existing code for weights, etc.
                     } else {
-                        // Only show reps for grouped exercises
+                        // Only show reps/time for grouped exercises
                         HStack(spacing: DesignSystem.adaptiveSpacing) {
-                            // Reps only
+                            // Reps/Time
                             HStack(spacing: 8) {
-                                Image(systemName: "figure.strengthtraining.traditional")
+                                Image(systemName: exerciseMetricTypes[index] == .reps ? 
+                                      "figure.strengthtraining.traditional" : "clock")
                                     .foregroundColor(Colors.nasmBlue)
                                     .imageScale(.large)
                                 
@@ -330,20 +358,58 @@ struct SessionDetailView: View {
                                         .multilineTextAlignment(.center)
                                         .focused($focusedRepsField, equals: index)
                                         .overlay(
-                                            Text("Reps")
+                                            Text(exerciseMetricTypes[index] == .reps ? "Reps" : "Secs")
                                                 .font(.body.bold())
                                                 .foregroundColor(Color(.placeholderText))
-                                                .opacity(exerciseRepsBinding.wrappedValue.isEmpty && focusedRepsField != index ? 1 : 0)
+                                                .opacity(exerciseReps[index].isEmpty && focusedRepsField != index ? 1 : 0)
                                         )
+                                    
+                                    // Add the type selector
+                                    HStack(spacing: 0) {
+                                        ForEach([ExerciseMetricType.reps, .time], id: \.self) { type in
+                                            Button(action: {
+                                                exerciseMetricTypes[index] = type
+                                                var updatedExercise = exercises[index]
+                                                if type == .reps {
+                                                    updatedExercise.reps = Int(exerciseReps[index]) ?? 0
+                                                    updatedExercise.time = nil
+                                                } else {
+                                                    updatedExercise.time = Int(exerciseReps[index])
+                                                    updatedExercise.reps = 0
+                                                }
+                                                
+                                                // Update on server
+                                                Task {
+                                                    await updateExerciseOnServer(updatedExercise)
+                                                }
+                                            }) {
+                                                Text(type == .reps ? "Reps" : "Time")
+                                                    .font(.footnote.bold())
+                                                    .frame(maxWidth: .infinity)
+                                                    .padding(.vertical, 8)
+                                                    .background(exerciseMetricTypes[index] == type ? Colors.nasmBlue : Color.clear)
+                                                    .foregroundColor(exerciseMetricTypes[index] == type ? .white : Colors.nasmBlue)
+                                            }
+                                        }
+                                    }
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(Colors.nasmBlue, lineWidth: 1)
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .frame(width: 120)
                                 } else {
-                                    Text("\(exercise.reps) reps")
-                                        .font(.body.bold())
+                                    if exerciseMetricTypes[index] == .reps {
+                                        Text("\(exercise.reps) reps")
+                                            .font(.body.bold())
+                                    } else {
+                                        Text("\(exercise.time ?? 0) secs")
+                                            .font(.body.bold())
+                                    }
                                 }
                             }
-                            
-                            Spacer()
                         }
-                        .adaptivePadding(.horizontal, 20)
+                        .padding(.leading, 30)
                     }
                     
                     if !isEditing && index < exerciseWeights.count {
@@ -476,8 +542,10 @@ struct SessionDetailView: View {
                                 return String(exercise.reps)
                             }
                         }
-                        // Initialize metric types array with the same size as exercises
-                        exerciseMetricTypes = exercises.map { $0.time != nil ? .time : .reps }
+                        // Initialize exerciseMetricTypes based on whether exercise has time or reps
+                        exerciseMetricTypes = exercises.map { exercise in
+                            exercise.time != nil ? .time : .reps
+                        }
                         
                         // Load saved weights from UserDefaults
                         if let savedData = UserDefaults.standard.data(forKey: "\(weightsStorageKey)\(session._id)"),
@@ -514,26 +582,20 @@ struct SessionDetailView: View {
         }
     }
     
-    private func deleteExercise(_ exercise: Exercise) {
-        Task {
-            do {
-                try await dataManager.deleteExercise(exercise)
-                await MainActor.run {
-                    exercises.removeAll { $0._id == exercise._id }
-                    if let index = exercises.firstIndex(where: { $0._id == exercise._id }) {
-                        exerciseNames.remove(at: index)
-                        exerciseSets.remove(at: index)
-                        exerciseReps.remove(at: index)
-                        exerciseMetricTypes.remove(at: index)
-                        exerciseWeights.remove(at: index)
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    self.error = "Failed to delete exercise: \(error.localizedDescription)"
-                    showingError = true
-                }
+    private func deleteExercise(_ exercise: Exercise) async {
+        do {
+            try await dataManager.deleteExercise(exerciseId: exercise._id)
+            if let index = exercises.firstIndex(where: { $0._id == exercise._id }) {
+                exercises.remove(at: index)
+                exerciseNames.remove(at: index)
+                exerciseSets.remove(at: index)
+                exerciseReps.remove(at: index)
+                exerciseMetricTypes.remove(at: index)
+                exerciseWeights.remove(at: index)
             }
+        } catch {
+            self.error = "Failed to delete exercise: \(error.localizedDescription)"
+            showingError = true
         }
     }
     
@@ -1019,6 +1081,34 @@ struct SessionDetailView: View {
             exerciseWeights.insert([], at: afterIndex + 1)
         }
     }
+    
+    // First, add a function to update exercise on the server
+    private func updateExerciseOnServer(_ exercise: Exercise) async {
+        do {
+            let updatedExercise = try await dataManager.updateExercise(
+                exerciseId: exercise._id,
+                exerciseData: [
+                    "exerciseName": exercise.exerciseName,
+                    "sets": exercise.sets,
+                    "reps": exercise.reps,
+                    "weight": exercise.weight,
+                    "time": exercise.time as Any,
+                    "groupType": exercise.groupType?.rawValue as Any,
+                    "groupId": exercise.groupId as Any
+                ]
+            )
+            
+            if let index = exercises.firstIndex(where: { $0._id == exercise._id }) {
+                await MainActor.run {
+                    exercises[index] = updatedExercise
+                    // Update the metric type
+                    exerciseMetricTypes[index] = updatedExercise.time != nil ? .time : .reps
+                }
+            }
+        } catch {
+            print("Error updating exercise:", error)
+        }
+    }
 }
 
 struct ExerciseRowView: View {
@@ -1193,6 +1283,7 @@ private struct ExerciseMetrics: View {
     @Binding var exerciseSets: String
     @Binding var exerciseReps: String
     @Binding var exerciseMetricType: ExerciseMetricType
+    let updateExercise: (Exercise) async -> Void
     @FocusState private var localFocusedSetsField: Int?
     @FocusState private var localFocusedRepsField: Int?
     
@@ -1240,17 +1331,52 @@ private struct ExerciseMetrics: View {
                         .multilineTextAlignment(.center)
                         .focused($localFocusedRepsField, equals: index)
                         .overlay(
-                            Text(exerciseMetricType == .reps ? "Reps" : "Sec")
+                            Text(exerciseMetricType == .reps ? "Reps" : "Secs")
                                 .font(.body.bold())
                                 .foregroundColor(Color(.placeholderText))
                                 .opacity(exerciseReps.isEmpty && localFocusedRepsField != index ? 1 : 0)
                         )
+                    
+                    // Add the type selector
+                    HStack(spacing: 0) {
+                        ForEach([ExerciseMetricType.reps, .time], id: \.self) { type in
+                            Button(action: {
+                                exerciseMetricType = type
+                                var updatedExercise = exercise
+                                if type == .reps {
+                                    updatedExercise.reps = Int(exerciseReps) ?? 0
+                                    updatedExercise.time = nil
+                                } else {
+                                    updatedExercise.time = Int(exerciseReps)
+                                    updatedExercise.reps = 0
+                                }
+                                
+                                // Use the passed function
+                                Task {
+                                    await updateExercise(updatedExercise)
+                                }
+                            }) {
+                                Text(type == .reps ? "Reps" : "Time")
+                                    .font(.footnote.bold())
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .background(exerciseMetricType == type ? Colors.nasmBlue : Color.clear)
+                                    .foregroundColor(exerciseMetricType == type ? .white : Colors.nasmBlue)
+                            }
+                        }
+                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Colors.nasmBlue, lineWidth: 1)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .frame(width: 120)
                 } else {
                     if exerciseMetricType == .reps {
                         Text("\(exercise.reps) reps")
                             .font(.body.bold())
                     } else {
-                        Text("\(exercise.time ?? 0) sec")
+                        Text("\(exercise.time ?? 0) secs")
                             .font(.body.bold())
                     }
                 }

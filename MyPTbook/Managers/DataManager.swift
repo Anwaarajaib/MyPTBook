@@ -50,6 +50,10 @@ class DataManager: ObservableObject {
     // Add new property at the top
     private let sessionCache: [String: [Session]] = [:]
     
+    // Add new property
+    private let tokenRefreshKey = "tokenLastRefresh"
+    private let tokenRefreshInterval: TimeInterval = 30 * 24 * 3600 // 30 days
+    
     private init() {
         // Initialize with stored values
         self.userName = defaults.string(forKey: userNameKey) ?? "Your Name"
@@ -62,6 +66,16 @@ class DataManager: ObservableObject {
     // MARK: - Client CRUD Operations
     func fetchClients() async throws {
         let cacheKey = "clients"
+        
+        // Check if token is expired
+        if !isTokenValid() {
+            // Try to refresh token or force logout
+            print("DataManager: Token expired, logging out")
+            await MainActor.run {
+                logout()
+            }
+            throw APIError.unauthorized
+        }
         
         // Check memory cache first
         if !shouldRefetch(forKey: cacheKey),
@@ -247,9 +261,9 @@ class DataManager: ObservableObject {
         return try await APIClient.shared.createExercise(exerciseData: exerciseData)
     }
     
-    func deleteExercise(_ exercise: Exercise) async throws {
-        print("DataManager: Deleting exercise:", exercise._id)
-        try await APIClient.shared.deleteExercise(exerciseId: exercise._id)
+    func deleteExercise(exerciseId: String) async throws {
+        print("DataManager: Deleting exercise:", exerciseId)
+        try await APIClient.shared.deleteExercise(exerciseId: exerciseId)
         print("DataManager: Exercise deleted successfully")
     }
     
@@ -267,6 +281,9 @@ class DataManager: ObservableObject {
         saveUserName(response.user.name)
         saveUserEmail(response.user.email)
         saveUserId(response.user.id)
+        
+        // Save token refresh time
+        defaults.set(Date(), forKey: tokenRefreshKey)
         
         if let profileImage = response.user.profileImage {
             print("DataManager: Saving profile image URL from login:", profileImage)
@@ -347,6 +364,7 @@ class DataManager: ObservableObject {
         userEmail = ""
         userProfileImageUrl = nil
         clientNutrition = nil
+        defaults.removeObject(forKey: tokenRefreshKey)
         print("DataManager: All data cleared")
     }
     
@@ -536,7 +554,7 @@ class DataManager: ObservableObject {
     func clearCache() {
         print("DataManager: Clearing cache")
         cache.removeAllObjects()
-        let domain = Bundle.main.bundleIdentifier!
+        _ = Bundle.main.bundleIdentifier!
         let dictionary = defaults.dictionaryRepresentation()
         dictionary.keys.filter { $0.hasPrefix(lastFetchTimeKey) }.forEach { key in
             defaults.removeObject(forKey: key)
@@ -551,5 +569,31 @@ class DataManager: ObservableObject {
         let cacheKey = "sessions_\(clientId)"
         cacheData(sessions, forKey: cacheKey)
         localStorage.save(sessions, forKey: cacheKey)
+    }
+    
+    // Add method to check token validity
+    private func isTokenValid() -> Bool {
+        // Always return true to prevent auto logout
+        return true
+    }
+    
+    // Add this method
+    func refreshTokenIfNeeded() async throws {
+        let lastRefresh = defaults.double(forKey: tokenRefreshKey)
+        let now = Date().timeIntervalSince1970
+        
+        if now - lastRefresh >= tokenRefreshInterval {
+            guard let _ = defaults.string(forKey: authTokenKey) else {
+                throw APIError.unauthorized
+            }
+            
+            // For now, just update the refresh time
+            print("DataManager: Refreshing token")
+            defaults.set(now, forKey: tokenRefreshKey)
+            
+            // TODO: In future, add actual token refresh API call:
+            // let newToken = try await APIClient.shared.refreshToken(token)
+            // defaults.set(newToken, forKey: authTokenKey)
+        }
     }
 }
